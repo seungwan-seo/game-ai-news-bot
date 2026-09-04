@@ -1,0 +1,169 @@
+digest:
+  title: "게임 AI 모닝 브리핑"
+  timezone: "Asia/Seoul"
+  delivery_hour_kst: 8
+  max_items: 6
+  max_items_per_source: 2
+  freshness_days: 4
+  max_description_chars: 2200
+
+http:
+  timeout_seconds: 25
+  delay_seconds: 0.6
+  user_agent: "game-ai-news-bot/0.1 (+personal RSS reader; contact via repository)"
+
+# trusted=true는 해당 사이트 전체가 게임 AI 전용이라는 뜻이다.
+# 일반 기술/게임 피드는 관련성 점수가 min_relevance 이상인 글만 남긴다.
+sources:
+  - id: ai_and_games
+    name: "AI and Games"
+    kind: rss
+    url: "https://www.aiandgames.com/feed"
+    trusted: true
+    source_weight: 10
+    perspective: independent
+
+  - id: games_and_ai
+    name: "Games and AI"
+    kind: rss
+    url: "https://www.gamesandai.org/feed"
+    trusted: true
+    source_weight: 8
+    perspective: independent
+
+  - id: game_developer
+    name: "Game Developer"
+    kind: rss
+    url: "https://www.gamedeveloper.com/rss.xml"
+    min_relevance: 6
+    source_weight: 9
+    perspective: journalism
+
+  - id: videogames_industry_memo
+    name: "Video Games Industry Memo"
+    kind: rss
+    url: "https://www.videogamesindustrymemo.com/feed"
+    min_relevance: 7
+    source_weight: 7
+    perspective: journalism
+
+  - id: deepmind
+    name: "Google DeepMind"
+    kind: rss
+    url: "https://deepmind.google/blog/rss.xml"
+    min_relevance: 7
+    source_weight: 8
+    perspective: vendor
+
+  - id: nvidia_developer
+    name: "NVIDIA Developer Blog"
+    kind: rss
+    url: "https://developer.nvidia.com/blog/feed/"
+    min_relevance: 7
+    source_weight: 7
+    perspective: vendor
+
+  - id: inworld
+    name: "Inworld"
+    kind: rss
+    url: "https://inworld.ai/blog/rss.xml"
+    min_relevance: 5
+    source_weight: 5
+    perspective: vendor
+
+  - id: unreal_engine
+    name: "Unreal Engine"
+    kind: rss
+    url: "https://www.unrealengine.com/rss?lang=en-US"
+    min_relevance: 7
+    source_weight: 7
+    perspective: vendor
+
+  - id: krafton_ai
+    name: "KRAFTON AI"
+    kind: krafton_blog
+    url: "https://www.krafton.ai/blog/"
+    min_relevance: 5
+    source_weight: 8
+    perspective: vendor
+
+  - id: microsoft_game_intelligence
+    name: "Microsoft Research Game Intelligence"
+    kind: html
+    url: "https://www.microsoft.com/en-us/research/group/game-intelligence/"
+    link_pattern: "^https://www\\.microsoft\\.com/en-us/research/(project|blog|publication|podcast)/.+"
+    trusted: true
+    require_date: true
+    source_weight: 8
+    perspective: research
+
+  - id: ubisoft_laforge
+    name: "Ubisoft La Forge"
+    kind: html
+    # 목록이 현재 클라이언트 렌더링이라 안정적인 링크가 서버 HTML에 돌아올 때 활성화한다.
+    enabled: false
+    url: "https://www.ubisoft.com/en-us/studio/laforge/news"
+    link_pattern: "^https://www\\.ubisoft\\.com/en-us/studio/laforge/news/.+"
+    min_relevance: 5
+    source_weight: 7
+    perspective: research
+
+  - id: arxiv_game_ai
+    name: "arXiv Game AI"
+    kind: arxiv
+    query: '(all:"video game" OR all:"game AI" OR all:"game agent" OR all:"procedural content generation") AND (cat:cs.AI OR cat:cs.LG OR cat:cs.HC)'
+    max_results: 35
+    min_relevance: 6
+    source_weight: 7
+    perspective: research
+
+ranking:
+  # 제목과 설명에 등장하면 합산한다. 긴 표현을 먼저 계산한다.
+  positive_keywords:
+    "ai game development": 9
+    "artificial intelligence in games": 9
+    "generative ai in games": 9
+    "game intelligence": 8
+    "game ai": 8
+    "ai game": 8
+    "ai-powered game": 8
+    "game agent": 8
+    "ai npc": 9
+    "non-player character": 7
+    "co-playable character": 9
+    "procedural content generation": 8
+    "world model": 7
+    "gameplay generation": 8
+    "game development": 5
+    "game developer": 4
+    "game engine": 4
+    "in-game": 4
+    "npc": 6
+    "gameplay": 4
+    "playtesting": 6
+    "player modeling": 6
+    "behavior tree": 6
+    "reinforcement learning": 4
+    "unreal engine": 3
+    "unity": 2
+    "procedural generation": 6
+    "interactive world": 5
+    "virtual character": 5
+    "autonomous character": 7
+    "게임 ai": 9
+    "게임 인공지능": 9
+    "게임 개발": 5
+    "생성형 ai": 3
+    "npc": 6
+    "절차 생성": 7
+    "플레이테스트": 6
+  negative_keywords:
+    "crypto": -10
+    "cryptocurrency": -10
+    "blockchain": -9
+    "web3": -9
+    "nft": -10
+    "casino": -10
+    "betting": -10
+    "stock price": -7
+    "token sale": -10
