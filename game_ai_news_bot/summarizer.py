@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import html
 import json
 import logging
 import re
@@ -10,6 +11,8 @@ from .models import Article, DigestItem
 from .ranking import category_trend
 
 logger = logging.getLogger(__name__)
+
+MYMEMORY_TRANSLATE_URL = "https://api.mymemory.translated.net/get"
 
 
 CATEGORY_INSIGHTS = {
@@ -30,14 +33,79 @@ def _truncate(text: str, limit: int) -> str:
     return text[: limit - 1].rstrip() + "…"
 
 
-def fallback_items(articles: list[Article]) -> tuple[list[DigestItem], str]:
+def _has_hangul(text: str) -> bool:
+    return bool(re.search(r"[가-힣]", text))
+
+
+def _limit_utf8(text: str, max_bytes: int = 480) -> str:
+    encoded = text.encode("utf-8")
+    if len(encoded) <= max_bytes:
+        return text
+    return encoded[:max_bytes].decode("utf-8", errors="ignore").rstrip()
+
+
+def _translation_source_title(title: str) -> str:
+    # 뉴스레터 제목 끝의 "| 02/09/26" 같은 발행일은 번역 품질을 크게 떨어뜨린다.
+    # 영문 원제에는 그대로 보존하고 번역 요청에서만 제거한다.
+    without_date = re.sub(
+        r"\s*[|｜]\s*\d{1,4}(?:[./-]\d{1,2}){2}\s*$",
+        "",
+        title,
+    )
+    return without_date.strip() or title
+
+
+def translate_title_to_korean(title: str, timeout: int = 12) -> str:
+    """Translate one public English headline through MyMemory's free GET API."""
+    clean_title = re.sub(r"\s+", " ", title).strip()
+    if not clean_title or _has_hangul(clean_title):
+        return clean_title
+
+    translation_source = _translation_source_title(clean_title)
+    response = requests.get(
+        MYMEMORY_TRANSLATE_URL,
+        params={
+            "q": _limit_utf8(translation_source),
+            "langpair": "en|ko",
+            "mt": "1",
+        },
+        timeout=timeout,
+    )
+    response.raise_for_status()
+    body = response.json()
+    if str(body.get("responseStatus", "200")) != "200":
+        raise ValueError(str(body.get("responseDetails") or "번역 API 오류"))
+    translated = html.unescape(
+        str(body.get("responseData", {}).get("translatedText") or "")
+    )
+    translated = re.sub(r"\s+", " ", translated).strip()
+    if not translated or translated.upper().startswith("MYMEMORY WARNING"):
+        raise ValueError("번역 결과가 비어 있거나 할당량을 초과했습니다.")
+    return translated
+
+
+def fallback_items(
+    articles: list[Article], translate_titles: bool = True, translation_timeout: int = 12
+) -> tuple[list[DigestItem], str]:
     items = []
     for article in articles:
         summary = article.description or "설명이 제공되지 않아 제목과 원문을 확인해야 합니다."
+        translated_title = article.title
+        if translate_titles:
+            try:
+                translated_title = translate_title_to_korean(
+                    article.title, timeout=translation_timeout
+                )
+            except Exception as exc:
+                logger.warning(
+                    "제목 번역 실패, 영문 원제 사용 (%s): %s",
+                    article.source_name,
+                    exc,
+                )
         items.append(
             DigestItem(
                 article=article,
-                title_ko=article.title,
+                title_ko=_truncate(translated_title, 180),
                 summary_ko=_truncate(summary, 230),
                 insight_ko=CATEGORY_INSIGHTS.get(article.category, CATEGORY_INSIGHTS["📰 기타"]),
             )
@@ -53,10 +121,15 @@ def _strip_code_fence(text: str) -> str:
 
 
 def summarize_with_gemini(
-    articles: list[Article], api_key: str, model: str, timeout: int = 45
+    articles: list[Article],
+    api_key: str,
+    model: str,
+    timeout: int = 45,
+    translate_titles: bool = True,
+    translation_timeout: int = 12,
 ) -> tuple[list[DigestItem], str]:
     if not api_key:
-        return fallback_items(articles)
+        return fallback_items(articles, translate_titles, translation_timeout)
 
     payload_articles = [
         {
@@ -98,7 +171,8 @@ def summarize_with_gemini(
     text = body["candidates"][0]["content"]["parts"][0]["text"]
     parsed = json.loads(_strip_code_fence(text))
     returned = {int(item["id"]): item for item in parsed.get("items", [])}
-    fallback, fallback_trend = fallback_items(articles)
+    # Gemini가 성공한 경우에는 별도의 제목 번역 API 호출이 필요 없다.
+    fallback, fallback_trend = fallback_items(articles, translate_titles=False)
     items: list[DigestItem] = []
     for index, article in enumerate(articles):
         item = returned.get(index, {})
@@ -115,12 +189,22 @@ def summarize_with_gemini(
 
 
 def summarize(
-    articles: list[Article], api_key: str = "", model: str = "gemini-2.5-flash"
+    articles: list[Article],
+    api_key: str = "",
+    model: str = "gemini-2.5-flash",
+    translate_titles: bool = True,
+    translation_timeout: int = 12,
 ) -> tuple[list[DigestItem], str]:
     if not api_key:
-        return fallback_items(articles)
+        return fallback_items(articles, translate_titles, translation_timeout)
     try:
-        return summarize_with_gemini(articles, api_key, model)
+        return summarize_with_gemini(
+            articles,
+            api_key,
+            model,
+            translate_titles=translate_titles,
+            translation_timeout=translation_timeout,
+        )
     except Exception as exc:
         logger.warning("Gemini 요약 실패, 규칙 기반 요약 사용: %s", exc)
-        return fallback_items(articles)
+        return fallback_items(articles, translate_titles, translation_timeout)

@@ -12,8 +12,15 @@ class DigestTests(unittest.TestCase):
         item = DigestItem(article, "<새 기능>", "A & B", "검증 <필요>")
         message = build_digest([item], "흐름 & 변화", "브리핑")
         self.assertIn("&lt;새 기능&gt;", message)
+        self.assertIn("EN · raw", message)
         self.assertIn("A &amp; B", message)
         self.assertIn('href="https://example.com/a"', message)
+
+    def test_omits_duplicate_original_title(self):
+        article = Article("s", "Source", "같은 제목", "https://example.com/a")
+        item = DigestItem(article, "같은 제목", "요약", "인사이트")
+        message = build_digest([item], "흐름", "브리핑")
+        self.assertNotIn("EN ·", message)
 
     def test_stays_under_telegram_limit(self):
         items = []

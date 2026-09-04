@@ -38,8 +38,12 @@ def build_digest(
     for index, item in enumerate(items, 1):
         article = item.article
         perspective = PERSPECTIVE_LABELS.get(article.perspective, "출처")
+        original_title = ""
+        if item.title_ko.casefold() != article.title.casefold():
+            original_title = f"\n<i>EN · {_esc(article.title)}</i>"
         block = (
-            f"\n\n<b>{index}. {_esc(article.category)}  {_esc(item.title_ko)}</b>\n"
+            f"\n\n<b>{index}. {_esc(article.category)}  {_esc(item.title_ko)}</b>"
+            f"{original_title}\n"
             f"{_esc(item.summary_ko)}\n"
             f"💡 {_esc(item.insight_ko)}\n"
             f'<a href="{html.escape(article.url, quote=True)}">'

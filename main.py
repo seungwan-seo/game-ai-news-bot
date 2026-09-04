@@ -40,6 +40,7 @@ def main() -> int:
     config = load_config(args.config)
     env = env_settings()
     digest_config = config.get("digest", {})
+    translation_config = config.get("translation", {})
     state_path = Path(config["base_dir"]) / "state" / "news_state.json"
     state = load_state(state_path)
 
@@ -77,7 +78,13 @@ def main() -> int:
         return 0
 
     api_key = "" if args.no_ai else env["gemini_api_key"]
-    items, trend = summarize(selected, api_key=api_key, model=env["gemini_model"])
+    items, trend = summarize(
+        selected,
+        api_key=api_key,
+        model=env["gemini_model"],
+        translate_titles=bool(translation_config.get("enabled", True)),
+        translation_timeout=int(translation_config.get("timeout_seconds", 12)),
+    )
     message = build_digest(
         items,
         trend,

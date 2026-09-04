@@ -12,6 +12,12 @@ http:
   delay_seconds: 0.6
   user_agent: "game-ai-news-bot/0.1 (+personal RSS reader; contact via repository)"
 
+# 선택된 영문 제목만 무료 MyMemory API로 한국어 번역한다.
+# 실패해도 영문 원제를 보존하고 브리핑 발송은 계속한다.
+translation:
+  enabled: true
+  timeout_seconds: 12
+
 # trusted=true는 해당 사이트 전체가 게임 AI 전용이라는 뜻이다.
 # 일반 기술/게임 피드는 관련성 점수가 min_relevance 이상인 글만 남긴다.
 sources:
