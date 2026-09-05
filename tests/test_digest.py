@@ -34,6 +34,19 @@ class DigestTests(unittest.TestCase):
         message = build_article_post(item, "브리핑")
         self.assertLessEqual(len(message), TELEGRAM_SAFE_LIMIT)
 
+    def test_korean_source_title_is_not_repeated_as_english_when_shortened(self):
+        article = Article(
+            "geeknews", "긱뉴스", "Claude Code와 Codex: 1만7천 회 실험으로 비교한 코딩 도구",
+            "https://news.hada.io/topic?id=1", perspective="community",
+        )
+        item = DigestItem(article, "Claude Code와 Codex 코딩 도구 비교", "한국어 소개", "비교 결과 확인")
+        message = build_article_post(item, "게임 AI 뉴스")
+        self.assertNotIn("EN ·", message)
+        self.assertNotIn(article.title, message)
+        self.assertIn(item.title_ko, message)
+        self.assertIn("출처 · 긱뉴스 · 한국어 큐레이션", message)
+        self.assertIn('href="https://news.hada.io/topic?id=1"', message)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -9,6 +9,11 @@ on:
     - cron: "53 0,3,6,9,12 * * *"
   workflow_dispatch:
     inputs:
+      publish_geeknews_url:
+        description: "긱뉴스 피드의 특정 기사 URL 1건 게시 (발송 기록 반영, 광고 없음)"
+        required: false
+        type: string
+        default: ""
       send_promo_now:
         description: "다음 자매 채널 홍보만 즉시 발송"
         required: false
@@ -20,12 +25,12 @@ on:
         type: boolean
         default: false
       preview_send:
-        description: "기존 기사를 상태 변경 없이 테스트 발송"
+        description: "콘솔 미리보기만 출력 (텔레그램 전송 없음)"
         required: false
         type: boolean
         default: false
       preview_limit:
-        description: "테스트 기사 수"
+        description: "콘솔 미리보기 기사 수"
         required: false
         type: choice
         options:
@@ -69,13 +74,16 @@ jobs:
           SEND_CHANNEL_GUIDE_NOW: ${{ inputs.send_channel_guide_now || 'false' }}
           PREVIEW_SEND: ${{ inputs.preview_send || 'false' }}
           PREVIEW_LIMIT: ${{ inputs.preview_limit || '1' }}
+          PUBLISH_GEEKNEWS_URL: ${{ inputs.publish_geeknews_url || '' }}
         run: |
-          if [ "$SEND_CHANNEL_GUIDE_NOW" = "true" ]; then
+          if [ "$PREVIEW_SEND" = "true" ]; then
+            python main.py --dry-run --show-all --limit "$PREVIEW_LIMIT" --no-promo
+          elif [ -n "$PUBLISH_GEEKNEWS_URL" ]; then
+            python main.py --source geeknews --article-url "$PUBLISH_GEEKNEWS_URL" --limit 1 --no-promo
+          elif [ "$SEND_CHANNEL_GUIDE_NOW" = "true" ]; then
             python main.py --send-channel-guide
           elif [ "$SEND_PROMO_NOW" = "true" ]; then
             python main.py --send-promo-now
-          elif [ "$PREVIEW_SEND" = "true" ]; then
-            python main.py --preview-send --limit "$PREVIEW_LIMIT"
           else
             python main.py
           fi
@@ -90,7 +98,10 @@ jobs:
           if ! git diff --cached --quiet; then
             git commit -m "상태 업데이트"
             for i in 1 2 3; do
-              git pull --rebase origin "$GITHUB_REF_NAME" && git push && break
+              if git pull --rebase origin main && git push origin HEAD:main; then
+                exit 0
+              fi
               sleep 5
             done
+            exit 1
           fi

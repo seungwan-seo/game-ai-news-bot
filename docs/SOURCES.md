@@ -1,11 +1,12 @@
 # 게임 AI 뉴스 소스 평가
 
-2026-09-05 기준. “게임에서 쓰이는 AI”와 “AI를 활용한 게임 제작”을 모두 보되, 단순 생성형 AI 업계 뉴스는 제외한다.
+2026-09-06 기준. “게임에서 쓰이는 AI”와 “AI를 활용한 게임 제작”을 모두 보되, 단순 생성형 AI 업계 뉴스는 제외한다.
 
 ## 자동 수집 중
 
 | 소스 | 수집 | 주로 얻는 신호 | 주의점 |
 |---|---|---|---|
+| [GeekNews](https://news.hada.io/) | [공식 RSS](https://news.hada.io/rss/news) 후 전용 필터 | 한국어 게임 AI·코딩 도구 비교·생성 도구·추론 운영 자료 | 하루 최대 2건. 짧은 소개와 긱뉴스 링크만 게시하며 추천 수는 사용하지 않음 |
 | [AI and Games](https://www.aiandgames.com/) | RSS | 전통적 게임 AI, 생성형 AI, 사례 분석, 주간 논평 | 가장 좋은 중심 소스. 유료 글은 RSS에 보이는 범위만 사용 |
 | [Games and AI](https://www.gamesandai.org/) | RSS | 스튜디오의 AI 도입 단계와 조직 변화 | 글 수가 적어 보조 소스로 사용 |
 | [Game Developer AI/ML/LLM](https://www.gamedeveloper.com/keyword/generative-ai) | 전체 RSS 후 필터 | 제품 발표, 개발사 사례, 법·노동·품질 논쟁 | 일반 게임 뉴스가 많아 관련성 임계값 적용 |
@@ -17,6 +18,8 @@
 | [Inworld Blog](https://inworld.ai/blog) | RSS 후 필터 | 실시간 음성·NPC·비용·상용 운영 사례 | 공급업체 사례 연구이므로 낮은 출처 가중치 |
 | [Unreal Engine](https://www.unrealengine.com/news) | 공식 Atom 피드 후 필터 | 엔진 기능, AI 플러그인·개발 워크플로 | 일반 엔진 소식이 많아 높은 임계값 적용 |
 | [arXiv](https://arxiv.org/) | 공식 API 검색 | AI NPC, 게임 에이전트, 절차 생성, 플레이어 모델링 논문 | 동료평가 전 논문도 포함되므로 재현성 확인 필요 |
+
+긱뉴스는 [이용약관](https://news.hada.io/terms)과 [robots 정책](https://news.hada.io/robots.txt)을 존중하여 공식 RSS를 낮은 빈도로 수집한다. 로그인·댓글·비공개 API는 사용하지 않는다. 상세 페이지가 403을 반환하면 우회하지 않고 RSS로만 게시한다. 확인된 원문 URL만 중복 비교용 별칭으로 저장하며, 원문 주소를 얻지 못한 경우 한·영 중복 탐지에 한계가 있다.
 
 ## 좋은 자료지만 자동 수집하지 않는 곳
 

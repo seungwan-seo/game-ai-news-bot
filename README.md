@@ -8,6 +8,7 @@
 
 - **독립 분석**: AI and Games, Games and AI
 - **전문 보도**: Game Developer, Video Games Industry Memo
+- **한국어 큐레이션**: GeekNews — 게임 AI와 제작에 활용할 AI 개발 도구만 하루 최대 2건
 - **연구·기술 원문**: Microsoft Research Game Intelligence, KRAFTON AI, Google DeepMind
 - **엔진·런타임**: NVIDIA Developer, Inworld, Unreal Engine
 - **논문**: arXiv의 게임 AI·NPC·게임 에이전트·절차 생성 관련 최신 논문
@@ -33,6 +34,14 @@ URL·유사 제목 중복 제거
 ```
 
 본문 전체를 무단 복제하지 않는다. RSS가 제공한 제목·설명과 원문 페이지가 공개한 짧은 문맥만 저장·요약하고 항상 원문 링크를 보낸다.
+
+### GeekNews 선별
+
+[공식 RSS](https://news.hada.io/rss/news)의 제목·짧은 소개를 읽고 게임 AI, AI 코딩 도구, 에셋·음성 생성, 추론 비용·지연처럼 제작 실무에 연결되는 글만 선별한다. 비교·평가·수치·사용 방법 언급을 가점으로 쓰며, 일반 투자·잡담·하드웨어 글은 제외한다. 긱뉴스라는 이유만으로 통과시키거나 추천 수를 추정하지 않는다.
+
+한국어 제목은 재번역하거나 영문 제목을 만들어 붙이지 않는다. 소개는 최대 180자의 짧은 발췌로 제한하고, 제목 링크와 `📰 긱뉴스에서 읽기` 버튼으로 연결한다. 긴 요약 전문·댓글은 복제하지 않는다. 공개 상세 페이지에서 확인된 원문 주소는 중복 제거에 함께 쓰지만, 403 등으로 확인하지 못한 한·영 기사 사이의 중복까지 보장하지는 않는다. 이미지도 확인된 경우에만 붙이며, 없으면 링크 미리보기로 요청한다.
+
+하루 최대 10건 중 긱뉴스는 최대 2건이다. 소스별 발송 횟수를 한국 시간 기준으로 저장하므로 여러 예약 회차에 걸쳐서도 상한을 지킨다.
 
 ## 로컬 실행
 
@@ -76,7 +85,7 @@ GEMINI_MODEL=gemini-2.5-flash
 향후 채널이 늘어나면 [`config.yaml`](config.yaml)의 `promotion.channels`에 이름·링크·설명을 추가한다. 봇은 목록을 순환하므로 특정 채널만 반복 노출되지 않는다.
 
 GitHub Actions의 `Run workflow`에서 `다음 자매 채널 홍보만 즉시 발송`을 체크하면 뉴스 수집 없이 홍보 1건만 바로 보낼 수 있다.
-`기존 기사를 상태 변경 없이 테스트 발송`을 체크하고 `테스트 기사 수`를 1·2·3·10 중 고르면 일일 한도와 읽음 기록에 영향을 주지 않고 실제 게시물 모양을 확인할 수 있다. 테스트 모드에서만 최신 후보가 부족할 경우 수집된 관련 기사 전체로 범위를 넓힌다.
+`콘솔 미리보기만 출력`을 체크하면 텔레그램에 보내지 않고 Actions 로그에서 내용을 확인한다. `긱뉴스 피드의 특정 기사 URL 1건 게시`에 피드에 있는 주소를 입력하면 정상 운영용 기사 1건만 무음으로 게시하고 읽음 기록·하루 한도에 반영한다. 이미 보낸 기사, 부적합한 기사, 한도를 초과한 기사는 보내지 않으며 광고도 함께 보내지 않는다.
 `고정용 채널 안내를 상태 변경 없이 즉시 발송`은 채널 소개, 자매 채널, 운영자의 Turtle Game을 한 게시물로 조용히 전송한다. 가격·리뷰 수치를 넣지 않은 공지용 문구라 발송 후 Telegram에서 고정해 두면 된다.
 
 ## 첫 배포
@@ -112,6 +121,7 @@ python main.py --bootstrap
 - `max_items_per_source`: 한 출처가 브리핑을 독점하지 않게 하는 상한
 - `freshness_days`: 며칠 이내 글만 후보로 볼지
 - `source_weight`: 출처 우선순위
+- 소스의 `max_items_per_day`: 여러 회차에 걸친 한국 시간 기준 출처별 하루 상한
 - `min_relevance`: 일반 피드에서 게임 AI 기사로 인정할 최소 점수
 - `positive_keywords` / `negative_keywords`: 선별 기준
 
@@ -121,10 +131,14 @@ Ubisoft La Forge도 좋은 원문 소스지만 현재 뉴스 목록이 브라우
 
 ## 주요 명령
 
+운영 채널에는 테스트·미리보기 안내 문구를 넣지 않는다. 검토는 기본적으로 아래 `--dry-run` 결과를 현재 대화에 보여주는 방식으로 한다. 실제 채널 검증 발송은 사용자가 요청한 건수만 정상 게시 형식으로 수행한다. 예전 `--preview-send` 옵션은 이제 **전송 없는 미리보기 별칭**이다.
+
 ```bash
 python main.py --dry-run             # 전송과 상태 변경 없이 미리보기
 python main.py --dry-run --show-all  # 이미 본 기사도 포함
-python main.py --preview-send --limit 2  # 게시물 2개를 보내되 읽음 상태는 유지
+python main.py --source geeknews --dry-run --no-promo --limit 2
+# 아래 명령은 실제 발송: 사용자가 요청한 운영 게시에만 사용
+python main.py --source geeknews --article-url "https://news.hada.io/topic?id=기사번호" --no-promo
 python main.py --send-promo-now          # 다음 자매 채널 홍보를 즉시 발송
 python main.py --send-channel-guide      # 고정용 채널 안내를 무음으로 즉시 발송
 python main.py --bootstrap           # 현재 기사 기준점 생성

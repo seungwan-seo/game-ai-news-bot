@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 from difflib import SequenceMatcher
 
 from .models import Article
+from .geeknews import evaluate_article as evaluate_geeknews
 
 
 CATEGORY_RULES = [
@@ -74,6 +75,16 @@ def rank_articles(articles: list[Article], config: dict, now: datetime | None = 
 
     for article in articles:
         source = source_config.get(article.source_id, {})
+        if source.get("editorial_filter") == "geeknews":
+            if not evaluate_geeknews(article):
+                continue
+            article.score = (
+                article.source_weight
+                + article.metadata["geeknews_score"]
+                + _recency_score(article, now)
+            )
+            ranked.append(article)
+            continue
         article.relevance = keyword_score(article, positive, negative)
         minimum = int(source.get("min_relevance", 0))
         if not source.get("trusted", False) and article.relevance < minimum:
@@ -93,7 +104,7 @@ def deduplicate(articles: list[Article], similarity: float = 0.84) -> list[Artic
     seen_urls: set[str] = set()
     seen_titles: list[str] = []
     for article in articles:
-        if article.url in seen_urls:
+        if article.identity_urls & seen_urls:
             continue
         title = normalized_title(article.title)
         duplicate = any(
@@ -103,18 +114,22 @@ def deduplicate(articles: list[Article], similarity: float = 0.84) -> list[Artic
         )
         if duplicate:
             continue
-        seen_urls.add(article.url)
+        seen_urls.update(article.identity_urls)
         seen_titles.append(title)
         kept.append(article)
     return kept
 
 
-def select_diverse(articles: list[Article], limit: int, max_per_source: int = 2) -> list[Article]:
+def select_diverse(
+    articles: list[Article], limit: int, max_per_source: int = 2,
+    *, source_limits: dict[str, int] | None = None,
+) -> list[Article]:
     """한 출처가 브리핑을 독점하지 않도록 점수 순서를 유지하며 출처별 상한을 둔다."""
     selected: list[Article] = []
     counts: Counter[str] = Counter()
     for article in articles:
-        if counts[article.source_id] >= max_per_source:
+        source_limit = min(max_per_source, (source_limits or {}).get(article.source_id, max_per_source))
+        if counts[article.source_id] >= source_limit:
             continue
         selected.append(article)
         counts[article.source_id] += 1

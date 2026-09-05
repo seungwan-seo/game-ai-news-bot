@@ -16,9 +16,10 @@ from game_ai_news_bot.promotion import (
     promotion_is_due,
     select_promotion,
 )
-from game_ai_news_bot.ranking import rank_articles, select_diverse
+from game_ai_news_bot.ranking import deduplicate, rank_articles, select_diverse
 from game_ai_news_bot.state import (
     delivered_today,
+    delivered_for_source_today,
     load_state,
     mark_delivered,
     mark_seen,
@@ -36,7 +37,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--preview-send",
         action="store_true",
-        help="이미 본 기사도 실제 전송하되 읽음 상태는 변경하지 않음",
+        help="이전 옵션의 안전한 별칭: 채널 전송 없이 콘솔 미리보기만 출력",
     )
     parser.add_argument(
         "--send-promo-now",
@@ -51,8 +52,22 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--bootstrap", action="store_true", help="현재 기사 전체를 읽음 처리하고 종료")
     parser.add_argument("--no-ai", action="store_true", help="Gemini 키가 있어도 규칙 기반 요약 사용")
     parser.add_argument("--limit", type=int, help="이번 실행의 최대 기사 수")
+    parser.add_argument("--source", help="설정에 등록된 소스 ID로 수집 범위 제한")
+    parser.add_argument("--article-url", help="피드에 존재하는 특정 기사 1건만 정상 발송")
+    parser.add_argument("--no-promo", action="store_true", help="이번 회차 자매 채널 홍보 생략")
     parser.add_argument("--verbose", action="store_true")
-    return parser.parse_args()
+    args = parser.parse_args()
+    if args.article_url and (not args.source or args.preview_send or args.show_all):
+        parser.error("--article-url은 --source와 함께 사용하며 읽음 기록을 우회할 수 없습니다.")
+    if args.article_url and (args.bootstrap or args.send_promo_now or args.send_channel_guide):
+        parser.error("--article-url은 다른 발송/기준점 생성 옵션과 함께 사용할 수 없습니다.")
+    if args.preview_send:
+        if args.bootstrap:
+            parser.error("미리보기에서 기준점을 변경할 수 없습니다.")
+        args.dry_run = True
+        args.show_all = True
+        args.no_promo = True
+    return args
 
 
 def main() -> int:
@@ -127,7 +142,13 @@ def main() -> int:
         config.get("http", {}),
         description_limit=int(digest_config.get("max_description_chars", 900)),
     )
-    articles, errors = collector.collect_all(config["sources"])
+    sources = config["sources"]
+    if args.source:
+        sources = [source for source in sources if source["id"] == args.source]
+        if not sources:
+            logging.error("등록되지 않은 소스입니다: %s", args.source)
+            return 2
+    articles, errors = collector.collect_all(sources)
     if not articles:
         logging.error("모든 소스에서 수집하지 못했습니다: %s", "; ".join(errors))
         return 2
@@ -147,9 +168,14 @@ def main() -> int:
         ]
     )
     if not (args.show_all or args.preview_send):
-        fresh = [item for item in fresh if item.url not in state["seen"]]
+        fresh = [item for item in fresh if not item.identity_urls.intersection(state["seen"])]
+    if args.article_url:
+        fresh = [item for item in fresh if item.url == args.article_url]
 
     if args.bootstrap:
+        if args.dry_run:
+            print(f"[DRY-RUN] 기준점 대상 {len(ranked)}건, 상태 변경 없음")
+            return 0
         mark_seen(state, [item.url for item in ranked], now)
         save_state(state_path, state)
         print(f"기준점 생성 완료: {len(ranked)}건을 읽음 처리했습니다.")
@@ -158,7 +184,7 @@ def main() -> int:
     per_run_limit = int(
         digest_config.get("max_items_per_run", digest_config.get("max_items", 1))
     )
-    limit = args.limit or per_run_limit
+    limit = 1 if args.article_url else (args.limit or per_run_limit)
     is_live_delivery = not args.dry_run and not args.preview_send and bool(
         env["telegram_token"] and env["telegram_chat_ids"]
     )
@@ -167,19 +193,35 @@ def main() -> int:
         remaining_today = daily_limit - delivered_today(state, now)
         if remaining_today <= 0:
             logging.info("오늘의 뉴스 발송 한도 %d건을 이미 채웠습니다.", daily_limit)
-            return 0
+            return 2 if args.article_url else 0
         limit = min(limit, remaining_today)
+    source_limits = {
+        source["id"]: max(
+            0,
+            int(source["max_items_per_day"])
+            - delivered_for_source_today(state, source["id"], now),
+        )
+        for source in sources
+        if "max_items_per_day" in source
+    } if not args.preview_send else {}
     selected = select_diverse(
         fresh,
         limit=max(1, limit),
         max_per_source=int(digest_config.get("max_items_per_source", 2)),
+        source_limits=source_limits,
     )
     if not selected:
         logging.info("새로 선별된 게임 AI 소식이 없습니다.")
-        return 0
+        return 2 if args.article_url else 0
 
     for article in selected:
         collector.enrich_article(article)
+    selected = deduplicate(selected)
+    if not (args.show_all or args.preview_send):
+        selected = [item for item in selected if not item.identity_urls.intersection(state["seen"])]
+    if not selected:
+        logging.info("원문 주소를 확인한 결과 이미 발송된 기사입니다.")
+        return 2 if args.article_url else 0
 
     api_key = "" if args.no_ai else env["gemini_api_key"]
     items, _trend = summarize(
@@ -199,7 +241,7 @@ def main() -> int:
     ]
     promotion = None
     promotion_message = ""
-    if not args.preview_send and promotion_is_due(state, promotion_config, now):
+    if not (args.preview_send or args.no_promo or args.article_url) and promotion_is_due(state, promotion_config, now):
         promotion = select_promotion(state, promotion_config)
         if promotion is not None:
             promotion_message = build_promotion_post(promotion)
@@ -211,7 +253,7 @@ def main() -> int:
         ):
             print(f"[DRY-RUN {index}/{len(messages)}]\n{message}\n")
             print(f"[IMAGE] {item.article.image_url or '(대표 이미지 없음)'}")
-            print(f"[BUTTON] 🔗 원문 기사 바로 보기 → {item.article.url}\n")
+            print(f"[BUTTON] {item.article.metadata.get('button_text', '🔗 원문 기사 바로 보기')} → {item.article.url}\n")
         if promotion_message:
             print("[PROMOTION DRY-RUN]\n" + promotion_message)
             print(f'[BUTTON] 🎁 Steam 할인 채널 방문하기 → {promotion["url"]}')
@@ -224,14 +266,19 @@ def main() -> int:
             env["telegram_token"],
             env["telegram_chat_ids"],
             message,
-            button_text="🔗 원문 기사 바로 보기",
+            button_text=item.article.metadata.get("button_text", "🔗 원문 기사 바로 보기"),
             button_url=item.article.url,
             image_url=item.article.image_url,
             preview_url=item.article.url,
+            silent=bool(args.article_url),
         )
         if not args.preview_send:
             # 중간 게시에서 실패해도 이미 성공한 기사가 다음 실행에 중복되지 않게 즉시 기록한다.
-            mark_delivered(state, [item.article.url], now)
+            mark_delivered(
+                state, [item.article.url], now,
+                source_id=item.article.source_id,
+                aliases=list(item.article.identity_urls - {item.article.url}),
+            )
             save_state(state_path, state)
 
     if not args.preview_send:

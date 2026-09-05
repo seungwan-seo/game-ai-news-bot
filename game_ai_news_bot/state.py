@@ -14,6 +14,7 @@ DEFAULT_STATE = {
     "promotion_cursor": 0,
     "delivery_day_kst": "",
     "delivery_count": 0,
+    "delivery_source_counts": {},
 }
 
 KST = timezone(timedelta(hours=9), name="KST")
@@ -21,8 +22,8 @@ KST = timezone(timedelta(hours=9), name="KST")
 
 def load_state(path: str | Path) -> dict:
     state_path = Path(path)
-    # 호출 간 seen 딕셔너리가 공유되지 않도록 중첩 값도 새로 만든다.
-    state = {**DEFAULT_STATE, "seen": {}}
+    # 호출 간 상태 딕셔너리가 공유되지 않도록 중첩 값도 새로 만든다.
+    state = {**DEFAULT_STATE, "seen": {}, "delivery_source_counts": {}}
     if state_path.exists():
         with state_path.open(encoding="utf-8") as handle:
             loaded = json.load(handle)
@@ -30,15 +31,38 @@ def load_state(path: str | Path) -> dict:
             state.update(loaded)
     if not isinstance(state.get("seen"), dict):
         state["seen"] = {}
+    state["delivery_source_counts"] = _source_counts(state)
     return state
 
 
 def mark_seen(state: dict, urls: list[str], now: datetime | None = None) -> None:
     now = now or datetime.now(timezone.utc)
     timestamp = now.isoformat()
+    if not isinstance(state.get("seen"), dict):
+        state["seen"] = {}
     for url in urls:
         state["seen"][url] = timestamp
     state["last_success_at"] = timestamp
+
+
+def _safe_count(value: object) -> int:
+    if isinstance(value, bool):
+        return 0
+    try:
+        return max(0, int(value))
+    except (TypeError, ValueError, OverflowError):
+        return 0
+
+
+def _source_counts(state: dict) -> dict[str, int]:
+    counts = state.get("delivery_source_counts", {})
+    if not isinstance(counts, dict):
+        return {}
+    return {
+        source_id: _safe_count(count)
+        for source_id, count in counts.items()
+        if isinstance(source_id, str) and source_id
+    }
 
 
 def delivered_today(state: dict, now: datetime | None = None) -> int:
@@ -46,20 +70,36 @@ def delivered_today(state: dict, now: datetime | None = None) -> int:
     current_day = now.astimezone(KST).date().isoformat()
     if state.get("delivery_day_kst") != current_day:
         return 0
-    try:
-        return max(0, int(state.get("delivery_count", 0)))
-    except (TypeError, ValueError):
+    return _safe_count(state.get("delivery_count", 0))
+
+
+def delivered_for_source_today(state: dict, source_id: str, now: datetime | None = None) -> int:
+    now = now or datetime.now(timezone.utc)
+    current_day = now.astimezone(KST).date().isoformat()
+    if state.get("delivery_day_kst") != current_day:
         return 0
+    return _source_counts(state).get(source_id, 0)
 
 
-def mark_delivered(state: dict, urls: list[str], now: datetime | None = None) -> None:
+def mark_delivered(
+    state: dict,
+    urls: list[str],
+    now: datetime | None = None,
+    *,
+    source_id: str = "",
+    aliases: list[str] | None = None,
+) -> None:
     now = now or datetime.now(timezone.utc)
     current_day = now.astimezone(KST).date().isoformat()
     current_count = delivered_today(state, now)
+    source_counts = _source_counts(state) if state.get("delivery_day_kst") == current_day else {}
     unique_urls = list(dict.fromkeys(urls))
-    mark_seen(state, unique_urls, now)
+    mark_seen(state, list(dict.fromkeys([*unique_urls, *(aliases or [])])), now)
     state["delivery_day_kst"] = current_day
     state["delivery_count"] = current_count + len(unique_urls)
+    if source_id:
+        source_counts[source_id] = source_counts.get(source_id, 0) + len(unique_urls)
+    state["delivery_source_counts"] = source_counts
 
 
 def prune_state(state: dict, max_age_days: int = 180, max_items: int = 6000) -> None:

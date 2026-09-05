@@ -9,6 +9,7 @@ import requests
 
 from .models import Article, DigestItem
 from .ranking import category_trend
+from .geeknews import build_summary as geeknews_summary, build_insight as geeknews_insight
 
 logger = logging.getLogger(__name__)
 
@@ -182,6 +183,14 @@ def fallback_items(
 ) -> tuple[list[DigestItem], str]:
     items = []
     for article in articles:
+        if article.metadata.get("editorial_filter") == "geeknews":
+            items.append(DigestItem(
+                article=article,
+                title_ko=_truncate(article.title, 180),
+                summary_ko=geeknews_summary(article),
+                insight_ko=geeknews_insight(article),
+            ))
+            continue
         summary_source = _summary_source(article)
         summary = summary_source or "공개된 요약이 없어 제목과 원문을 함께 확인해야 합니다."
         translated_title = article.title
@@ -301,6 +310,14 @@ def summarize(
     translate_titles: bool = True,
     translation_timeout: int = 12,
 ) -> tuple[list[DigestItem], str]:
+    # 긱뉴스의 한국어 소개를 재번역하거나 Gemini로 불필요하게 다시 만들지 않는다.
+    if any(a.metadata.get("editorial_filter") == "geeknews" for a in articles):
+        others = [a for a in articles if a.metadata.get("editorial_filter") != "geeknews"]
+        other_items, _ = summarize(others, api_key, model, translate_titles, translation_timeout) if others else ([], "")
+        by_url = {item.article.url: item for item in other_items}
+        geek_items, _ = fallback_items([a for a in articles if a.metadata.get("editorial_filter") == "geeknews"])
+        by_url.update({item.article.url: item for item in geek_items})
+        return [by_url[a.url] for a in articles], category_trend(articles)
     if not api_key:
         return fallback_items(articles, translate_titles, translation_timeout)
     try:

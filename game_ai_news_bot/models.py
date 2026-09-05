@@ -20,6 +20,15 @@ class Article:
     image_url: str = ""
     metadata: dict = field(default_factory=dict)
 
+    @property
+    def identity_urls(self) -> set[str]:
+        """동일 기사의 집계 페이지와 확인된 원문 URL을 함께 비교한다."""
+        urls = {self.url}
+        original = self.metadata.get("original_url")
+        if isinstance(original, str) and original.startswith(("https://", "http://")):
+            urls.add(original)
+        return urls
+
 
 @dataclass(slots=True)
 class DigestItem:

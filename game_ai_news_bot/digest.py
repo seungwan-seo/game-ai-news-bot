@@ -16,6 +16,7 @@ PERSPECTIVE_LABELS = {
     "journalism": "전문 보도",
     "research": "연구 원문",
     "vendor": "공식 발표",
+    "community": "한국어 큐레이션",
 }
 
 
@@ -38,7 +39,10 @@ def build_article_post(
     perspective = PERSPECTIVE_LABELS.get(article.perspective, "출처")
     article_url = html.escape(article.url, quote=True)
     original_title = ""
-    if item.title_ko.casefold() != article.title.casefold():
+    if (
+        item.title_ko.casefold() != article.title.casefold()
+        and not re.search(r"[가-힣]", article.title)
+    ):
         original_title = f"\n<i>EN · {_esc(article.title)}</i>"
     message = (
         f"<b>🎮 {_esc(title)}</b>\n"

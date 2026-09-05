@@ -213,8 +213,13 @@ def _first_text(element: ET.Element, *names: str) -> str:
     for name in names:
         wanted = name.lower()
         for child in list(element):
-            if _local_name(child.tag) == wanted and child.text:
-                return child.text.strip()
+            if _local_name(child.tag) == wanted:
+                if len(child):
+                    return (child.text or "") + "".join(
+                        ET.tostring(node, encoding="unicode") for node in child
+                    )
+                if child.text and child.text.strip():
+                    return child.text.strip()
     return ""
 
 
@@ -286,17 +291,30 @@ def parse_feed(xml_text: str, source: dict, description_limit: int = 900) -> lis
         url = canonical_url(link)
         if not title or not url:
             continue
+        is_geeknews = source.get("editorial_filter") == "geeknews"
+        metadata = {"language": source.get("language", "")}
+        if is_geeknews:
+            metadata["editorial_filter"] = "geeknews"
+            metadata["button_text"] = "📰 긱뉴스에서 읽기"
+            # 한국어 목록을 한 줄로 합치면 짧은 소개가 중간 문장에서 잘린다.
+            soup = BeautifulSoup(description, "html.parser")
+            blocks = soup.find_all(lambda tag: tag.name.split(":")[-1] in {"li", "p"})
+            lines = [node.get_text(" ", strip=True) for node in blocks]
+            plain_description = "\n".join(lines) if lines else soup.get_text(" ", strip=True)
+        else:
+            plain_description = clean_text(description, description_limit)
         articles.append(
             Article(
                 source_id=source["id"],
                 source_name=source["name"],
                 title=title,
                 url=url,
-                description=clean_text(description, description_limit),
+                description=plain_description[:description_limit],
                 published_at=parse_datetime(published),
                 source_weight=int(source.get("source_weight", 0)),
                 perspective=source.get("perspective", "unknown"),
                 image_url=image_from_feed_entry(entry, description, url),
+                metadata=metadata,
             )
         )
     return articles
@@ -336,6 +354,19 @@ class Collector:
             discovered_image, excerpt = page_metadata(
                 response.text, article.url, article.title
             )
+            if article.metadata.get("editorial_filter") == "geeknews":
+                # 공개 상세 페이지가 응답할 때만 제목 링크를 사용한다. 403은
+                # 아래 예외 처리로 RSS 소개와 Telegram 링크 미리보기를 유지한다.
+                soup = BeautifulSoup(response.text, "html.parser")
+                heading_link = soup.select_one(".topictitle a[href]")
+                if heading_link:
+                    original = canonical_url(urljoin(article.url, heading_link["href"]))
+                    if original and urlsplit(original).hostname != "news.hada.io":
+                        article.metadata["original_url"] = original
+                if discovered_image:
+                    article.image_url = discovered_image
+                # 한국어 피드 소개를 영문 원문이나 페이지 메뉴로 덮어쓰지 않는다.
+                return article
             if not article.image_url and discovered_image:
                 article.image_url = discovered_image
             if excerpt and (
