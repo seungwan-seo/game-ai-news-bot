@@ -136,6 +136,9 @@ def main() -> int:
         logging.info("새로 선별된 게임 AI 소식이 없습니다.")
         return 0
 
+    for article in selected:
+        collector.enrich_article(article)
+
     api_key = "" if args.no_ai else env["gemini_api_key"]
     items, _trend = summarize(
         selected,
@@ -165,6 +168,7 @@ def main() -> int:
             zip(items, messages, strict=True), 1
         ):
             print(f"[DRY-RUN {index}/{len(messages)}]\n{message}\n")
+            print(f"[IMAGE] {item.article.image_url or '(대표 이미지 없음)'}")
             print(f"[BUTTON] 🔗 원문 기사 바로 보기 → {item.article.url}\n")
         if promotion_message:
             print("[PROMOTION DRY-RUN]\n" + promotion_message)
@@ -180,6 +184,8 @@ def main() -> int:
             message,
             button_text="🔗 원문 기사 바로 보기",
             button_url=item.article.url,
+            image_url=item.article.image_url,
+            preview_url=item.article.url,
         )
         if not args.preview_send:
             # 중간 게시에서 실패해도 이미 성공한 기사가 다음 실행에 중복되지 않게 즉시 기록한다.

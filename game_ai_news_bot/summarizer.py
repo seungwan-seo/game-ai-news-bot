@@ -15,14 +15,29 @@ logger = logging.getLogger(__name__)
 MYMEMORY_TRANSLATE_URL = "https://api.mymemory.translated.net/get"
 
 
+INSIGHT_RULES = (
+    (("gamescom", "gdc", "conference", "interview"), "행사 데모보다 현업 개발자들이 반복해서 꺼낸 문제와 실제 도입 온도를 읽기 좋은 자료입니다."),
+    (("open source", "github", "source code", "repository"), "공개 코드가 있어 홍보 문구에 머물지 않고 직접 재현·개조해 볼 수 있다는 점이 핵심입니다."),
+    (("benchmark", "dataset", "evaluation"), "새 모델의 숫자보다 게임 상황을 얼마나 현실적으로 측정하는 평가 기준인지가 더 중요한 소식입니다."),
+    (("latency", "real-time", "realtime"), "실시간 게임에서는 모델 정확도보다 지연시간이 곧 조작감이므로 실제 프레임 예산에 넣어 볼 가치가 큽니다."),
+    (("dialogue", "conversation", "voice", "speech"), "NPC 대화의 자연스러움보다 플레이 상태를 읽고 말과 행동을 함께 바꾸는지가 제품화의 승부처입니다."),
+    (("agent", "autonomous", "companion", "npc"), "에이전트가 스크립트를 벗어날수록 디자이너가 행동을 통제하고 같은 상황을 재현할 수 있는 장치가 중요해집니다."),
+    (("procedural", "level generation", "world generation"), "생성 속도보다 디자이너가 결과를 수정하고 같은 조건을 다시 만들 수 있는지가 실무 채택을 가릅니다."),
+    (("world model", "simulation"), "플레이 가능한 세계를 예측·생성하는 모델은 콘텐츠 제작과 AI 플레이어 훈련을 한 파이프라인으로 묶을 가능성이 있습니다."),
+    (("unity", "unreal", "engine", "plugin", "sdk"), "성능 시연보다 기존 엔진의 반복 수정·버전 관리 흐름에 얼마나 자연스럽게 들어오는지가 핵심입니다."),
+    (("playtest", "qa", "testing", "bug"), "자동 플레이어가 사람처럼 실패하고 우회하는지를 검증해야 실제 QA 시간을 줄일 수 있습니다."),
+    (("copyright", "regulation", "policy", "lawsuit"), "기술 성능보다 학습 데이터와 표시 의무가 실제 출시 가능 범위를 결정하는 사안입니다."),
+    (("release", "launch", "announce", "available"), "연구 데모가 아니라 개발자가 바로 시험할 수 있는 단계로 내려왔는지가 이 소식의 관전 포인트입니다."),
+)
+
 CATEGORY_INSIGHTS = {
-    "🤖 NPC·에이전트": "대화 데모보다 지연시간·행동 제어·게임 상태 연동 여부를 확인할 가치가 있습니다.",
-    "🌍 월드·콘텐츠 생성": "결과의 일관성과 수정 가능성, 실제 엔진으로 내보낼 수 있는지가 실무 기준입니다.",
-    "🛠 개발 도구": "제작 속도보다 반복 수정과 버전 관리에 안정적으로 들어오는지가 핵심입니다.",
-    "🧪 테스트·플레이어 모델": "QA 비용 절감뿐 아니라 실제 플레이어 행동을 얼마나 잘 재현하는지 봐야 합니다.",
-    "📚 연구": "논문 성능보다 공개 코드·재현성·실시간 실행 비용을 함께 확인해야 합니다.",
-    "⚖️ 산업·정책": "도입률과 별개로 저작권·표시 의무·개발자와 플레이어 반응이 상용화 속도를 좌우합니다.",
-    "📰 기타": "게임 제작이나 플레이 경험에 직접 연결되는 사례인지 원문에서 확인할 필요가 있습니다.",
+    "🤖 NPC·에이전트": "NPC AI가 말 잘하는 데모를 넘어 실제 플레이 규칙 안에서 통제 가능한 시스템이 되는지를 보여주는 흐름입니다.",
+    "🌍 월드·콘텐츠 생성": "생성 결과를 디자이너가 고치고 반복 생산할 수 있는지가 콘텐츠 파이프라인의 실제 가치를 결정합니다.",
+    "🛠 개발 도구": "몇 초를 줄였다는 시연보다 팀의 반복 수정과 협업 과정에 들어오는지가 도구의 생존을 가릅니다.",
+    "🧪 테스트·플레이어 모델": "사람 같은 실수와 변칙 행동까지 재현해야 자동 테스트가 단순 반복 작업을 넘어섭니다.",
+    "📚 연구": "당장 제품 소식은 아니지만 다음 세대 게임 AI의 평가 기준과 구현 방향을 먼저 볼 수 있습니다.",
+    "⚖️ 산업·정책": "기술이 가능하다는 사실과 실제 게임에 출시할 수 있다는 사실 사이의 간격을 다루는 소식입니다.",
+    "📰 기타": "게임 제작이나 플레이 경험을 실제로 바꾸는 지점을 중심으로 볼 만한 소식입니다.",
 }
 
 
@@ -55,17 +70,15 @@ def _translation_source_title(title: str) -> str:
     return without_date.strip() or title
 
 
-def translate_title_to_korean(title: str, timeout: int = 12) -> str:
-    """Translate one public English headline through MyMemory's free GET API."""
-    clean_title = re.sub(r"\s+", " ", title).strip()
-    if not clean_title or _has_hangul(clean_title):
-        return clean_title
-
-    translation_source = _translation_source_title(clean_title)
+def translate_text_to_korean(value: str, timeout: int = 12) -> str:
+    """Translate a short public headline or excerpt through MyMemory's free API."""
+    clean_value = re.sub(r"\s+", " ", value).strip()
+    if not clean_value or _has_hangul(clean_value):
+        return clean_value
     response = requests.get(
         MYMEMORY_TRANSLATE_URL,
         params={
-            "q": _limit_utf8(translation_source),
+            "q": _limit_utf8(clean_value),
             "langpair": "en|ko",
             "mt": "1",
         },
@@ -84,12 +97,93 @@ def translate_title_to_korean(title: str, timeout: int = 12) -> str:
     return translated
 
 
+def translate_title_to_korean(title: str, timeout: int = 12) -> str:
+    """Translate one public English headline through MyMemory's free GET API."""
+    clean_title = re.sub(r"\s+", " ", title).strip()
+    return translate_text_to_korean(
+        _translation_source_title(clean_title), timeout=timeout
+    )
+
+
+def _summary_source(article: Article) -> str:
+    description = re.sub(r"\s+", " ", article.description).strip()
+    if not description:
+        return ""
+    sentences = [
+        sentence.strip()
+        for sentence in re.split(r"(?<=[.!?])\s+", description)
+        if len(sentence.strip()) >= 35
+    ]
+    if not sentences:
+        return _truncate(description, 360)
+    title_terms = {
+        term
+        for term in re.findall(r"[a-z0-9가-힣]{3,}", article.title.casefold())
+        if term
+        not in {
+            "with",
+            "from",
+            "about",
+            "this",
+            "that",
+            "game",
+            "games",
+            "gamescom",
+            "post",
+            "musings",
+            "gossip",
+            "dev",
+        }
+    }
+
+    def sentence_score(sentence: str) -> float:
+        lowered = sentence.casefold()
+        score = sum(2 for term in title_terms if term in lowered)
+        score += sum(
+            1
+            for term in (
+                " ai ",
+                "agent",
+                "npc",
+                "model",
+                "developer",
+                "release",
+                "research",
+                "tool",
+                "gameplay",
+                "pipeline",
+                "governance",
+                "studio",
+                "code generation",
+            )
+            if term in f" {lowered} "
+        )
+        if any(
+            marker in lowered
+            for marker in ("hello all", "welcome to", "subscribe", "sign up")
+        ):
+            score -= 8
+        return score
+
+    best = max(sentences[:30], key=sentence_score)
+    return _truncate(best, 360)
+
+
+def fallback_insight(article: Article) -> str:
+    source_text = f"{article.title} {article.description}".casefold()
+    for terms, insight in INSIGHT_RULES:
+        if any(term in source_text for term in terms):
+            return insight
+    return CATEGORY_INSIGHTS.get(article.category, CATEGORY_INSIGHTS["📰 기타"])
+
+
 def fallback_items(
     articles: list[Article], translate_titles: bool = True, translation_timeout: int = 12
 ) -> tuple[list[DigestItem], str]:
     items = []
     for article in articles:
-        summary = article.description or "설명이 제공되지 않아 제목과 원문을 확인해야 합니다."
+        summary_source = _summary_source(article)
+        summary = summary_source or "공개된 요약이 없어 제목과 원문을 함께 확인해야 합니다."
         translated_title = article.title
         if translate_titles:
             try:
@@ -102,12 +196,23 @@ def fallback_items(
                     article.source_name,
                     exc,
                 )
+            if summary_source:
+                try:
+                    summary = translate_text_to_korean(
+                        summary_source, timeout=translation_timeout
+                    )
+                except Exception as exc:
+                    logger.warning(
+                        "요약 번역 실패, 원문 발췌 사용 (%s): %s",
+                        article.source_name,
+                        exc,
+                    )
         items.append(
             DigestItem(
                 article=article,
                 title_ko=_truncate(translated_title, 180),
-                summary_ko=_truncate(summary, 230),
-                insight_ko=CATEGORY_INSIGHTS.get(article.category, CATEGORY_INSIGHTS["📰 기타"]),
+                summary_ko=_truncate(summary, 200),
+                insight_ko=fallback_insight(article),
             )
         )
     return items, category_trend(articles)
@@ -148,7 +253,8 @@ def summarize_with_gemini(
 각 기사에 대해:
 - title_ko: 고유명사를 보존한 자연스러운 한국어 제목
 - summary_ko: 무엇이 새로 나왔거나 밝혀졌는지 1~2문장, 130자 이내
-- insight_ko: 게임 개발자가 실제로 검증할 지점이나 의미 1문장, 100자 이내
+- insight_ko: 이 기사를 왜 지금 읽어야 하는지 기사 고유 사실과 연결한 단정형 1문장, 110자 이내
+  '확인할 가치가 있습니다', '주목할 만합니다', '원문을 확인하세요' 같은 범용 문구는 금지한다.
 전체 trend_ko: 여러 기사에서 공통으로 보이는 흐름 1~2문장, 160자 이내
 
 반드시 다음 JSON 형태만 반환하라:

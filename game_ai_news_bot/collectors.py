@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import html
 import logging
 import re
 import time
@@ -14,6 +15,43 @@ from bs4 import BeautifulSoup
 from .models import Article
 
 logger = logging.getLogger(__name__)
+
+BOILERPLATE_MARKERS = (
+    "hello all and welcome",
+    "welcome to this week's",
+    "welcome to this week’s",
+    "subscribe to",
+    "sign up for",
+    "read more",
+    "cookie policy",
+    "fantastic time",
+    "thank everyone",
+    "i'm exhausted",
+    "i’m exhausted",
+    "far from recovered",
+)
+
+SUMMARY_SIGNAL_TERMS = (
+    "ai",
+    "agent",
+    "npc",
+    "game",
+    "model",
+    "research",
+    "developer",
+    "engine",
+    "tool",
+    "release",
+    "launch",
+    "announc",
+    "generat",
+    "playtest",
+    "pipeline",
+    "governance",
+    "on-device",
+    "tool design",
+    "qa",
+)
 
 
 def clean_text(value: str, limit: int = 1200) -> str:
@@ -38,6 +76,128 @@ def canonical_url(value: str) -> str:
         kept_query.append(pair)
     path = parts.path.rstrip("/") or "/"
     return urlunsplit((parts.scheme.lower(), parts.netloc.lower(), path, "&".join(kept_query), ""))
+
+
+def media_url(value: str, base_url: str = "") -> str:
+    if not value:
+        return ""
+    candidate = urljoin(base_url, html.unescape(value).strip())
+    parts = urlsplit(candidate)
+    if parts.scheme not in {"http", "https"} or not parts.netloc or parts.username:
+        return ""
+    if parts.path.casefold().endswith((".svg", ".gif")):
+        return ""
+    return candidate
+
+
+def _srcset_candidate(value: str) -> str:
+    candidates = [part.strip().split()[0] for part in value.split(",") if part.strip()]
+    return candidates[-1] if candidates else ""
+
+
+def image_from_html(value: str, base_url: str = "") -> str:
+    if not value:
+        return ""
+    soup = BeautifulSoup(value, "html.parser")
+    for image in soup.find_all("img"):
+        candidate = ""
+        for attribute in ("src", "data-src", "data-original", "data-lazy-src"):
+            candidate = image.get(attribute, "")
+            if candidate:
+                break
+        if not candidate and image.get("srcset"):
+            candidate = _srcset_candidate(image["srcset"])
+        resolved = media_url(candidate, base_url)
+        if resolved:
+            return resolved
+    return ""
+
+
+def image_from_feed_entry(entry: ET.Element, description_html: str, article_url: str) -> str:
+    for node in entry.iter():
+        name = _local_name(node.tag)
+        if name not in {"thumbnail", "content", "enclosure", "image"}:
+            continue
+        media_type = str(node.attrib.get("type", "")).casefold()
+        medium = str(node.attrib.get("medium", "")).casefold()
+        if name == "enclosure" and media_type and not media_type.startswith("image/"):
+            continue
+        if name == "content" and media_type and not media_type.startswith("image/") and medium != "image":
+            continue
+        candidate = node.attrib.get("url") or node.attrib.get("href") or ""
+        resolved = media_url(candidate, article_url)
+        if resolved:
+            return resolved
+    return image_from_html(description_html, article_url)
+
+
+def _excerpt_score(value: str, title: str) -> float:
+    lowered = value.casefold()
+    score = min(len(value), 500) / 100
+    if any(marker in lowered for marker in BOILERPLATE_MARKERS):
+        score -= 8
+    title_terms = {
+        term
+        for term in re.findall(r"[a-z0-9가-힣]{3,}", title.casefold())
+        if term
+        not in {
+            "with",
+            "from",
+            "about",
+            "this",
+            "that",
+            "game",
+            "games",
+            "gamescom",
+            "post",
+            "musings",
+            "gossip",
+            "dev",
+        }
+    }
+    score += sum(2 for term in title_terms if term in lowered)
+    score += sum(0.5 for term in SUMMARY_SIGNAL_TERMS if term in lowered)
+    return score
+
+
+def page_metadata(html_text: str, page_url: str, title: str) -> tuple[str, str]:
+    soup = BeautifulSoup(html_text, "html.parser")
+    image = ""
+    for attributes in (
+        {"property": "og:image:secure_url"},
+        {"property": "og:image"},
+        {"name": "twitter:image"},
+        {"name": "twitter:image:src"},
+    ):
+        node = soup.find("meta", attrs=attributes)
+        image = media_url(node.get("content", "") if node else "", page_url)
+        if image:
+            break
+    if not image:
+        image_link = soup.find("link", rel=lambda value: value and "image_src" in value)
+        image = media_url(image_link.get("href", "") if image_link else "", page_url)
+    if not image:
+        content_root = soup.find("article") or soup.find("main") or soup
+        image = image_from_html(str(content_root), page_url)
+
+    excerpts: list[str] = []
+    for attributes in (
+        {"property": "og:description"},
+        {"name": "twitter:description"},
+        {"name": "description"},
+    ):
+        node = soup.find("meta", attrs=attributes)
+        excerpt = clean_text(node.get("content", "") if node else "", 700)
+        if len(excerpt) >= 40:
+            excerpts.append(excerpt)
+    content_root = soup.find("article") or soup.find("main")
+    if content_root:
+        for paragraph in content_root.find_all("p")[:40]:
+            excerpt = clean_text(paragraph.get_text(" ", strip=True), 700)
+            if len(excerpt) >= 40:
+                excerpts.append(excerpt)
+    best_excerpt = max(excerpts, key=lambda value: _excerpt_score(value, title), default="")
+    return image, best_excerpt
 
 
 def _local_name(tag: str) -> str:
@@ -136,6 +296,7 @@ def parse_feed(xml_text: str, source: dict, description_limit: int = 900) -> lis
                 published_at=parse_datetime(published),
                 source_weight=int(source.get("source_weight", 0)),
                 perspective=source.get("perspective", "unknown"),
+                image_url=image_from_feed_entry(entry, description, url),
             )
         )
     return articles
@@ -159,6 +320,33 @@ class Collector:
         response.raise_for_status()
         time.sleep(self.delay)
         return response
+
+    def enrich_article(self, article: Article) -> Article:
+        """선별된 기사만 열어 대표 이미지와 더 나은 공개 요약 문맥을 보강한다."""
+        try:
+            response = self._get(
+                article.url,
+                headers={
+                    "Accept": "text/html,application/xhtml+xml;q=0.9,*/*;q=0.2"
+                },
+            )
+            content_type = response.headers.get("content-type", "").casefold()
+            if content_type and "html" not in content_type:
+                return article
+            discovered_image, excerpt = page_metadata(
+                response.text, article.url, article.title
+            )
+            if not article.image_url and discovered_image:
+                article.image_url = discovered_image
+            if excerpt and (
+                not article.description
+                or _excerpt_score(excerpt, article.title)
+                > _excerpt_score(article.description, article.title) + 1
+            ):
+                article.description = clean_text(excerpt, self.description_limit)
+        except Exception as exc:
+            logger.info("기사 메타데이터 보강 실패 (%s): %s", article.url, exc)
+        return article
 
     def collect_source(self, source: dict) -> list[Article]:
         kind = source.get("kind", "rss")
@@ -218,6 +406,7 @@ class Collector:
                 continue
             container = anchor.find_parent("article") or anchor.find_parent("li") or anchor.parent
             description = clean_text(container.get_text(" ", strip=True) if container else "", self.description_limit)
+            image_url = image_from_html(str(container) if container else "", source["url"])
             if description == title:
                 description = ""
             published = parse_date_from_text(description)
@@ -234,6 +423,7 @@ class Collector:
                     published_at=published,
                     source_weight=int(source.get("source_weight", 0)),
                     perspective=source.get("perspective", "unknown"),
+                    image_url=image_url,
                 )
             )
             if len(articles) >= int(source.get("max_results", 30)):

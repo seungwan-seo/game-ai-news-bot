@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import html
+import re
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -8,6 +9,7 @@ from .models import DigestItem
 
 
 TELEGRAM_SAFE_LIMIT = 3900
+TELEGRAM_CAPTION_SAFE_LIMIT = 1000
 
 PERSPECTIVE_LABELS = {
     "independent": "독립 분석",
@@ -44,10 +46,13 @@ def build_article_post(
         f"<b>{_esc(article.category)}</b>\n"
         f'<b><a href="{article_url}">🔗 {_esc(item.title_ko)}</a></b>'
         f"{original_title}\n\n"
-        f"{_esc(item.summary_ko)}\n\n"
-        f"💡 <b>개발 인사이트</b>\n{_esc(item.insight_ko)}\n\n"
+        f"📝 <b>한줄 요약</b>\n{_esc(item.summary_ko)}\n\n"
+        f"🎯 <b>왜 봐야 하나</b>\n{_esc(item.insight_ko)}\n\n"
         f"<i>출처 · {_esc(article.source_name)} · {perspective}</i>"
     )
     if len(message) > TELEGRAM_SAFE_LIMIT:
         raise ValueError("기사 게시물이 Telegram 안전 길이를 초과했습니다.")
+    visible_text = html.unescape(re.sub(r"<[^>]+>", "", message))
+    if len(visible_text) > TELEGRAM_CAPTION_SAFE_LIMIT:
+        raise ValueError("기사 게시물이 Telegram 사진 캡션 안전 길이를 초과했습니다.")
     return message

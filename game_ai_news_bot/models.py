@@ -17,6 +17,7 @@ class Article:
     relevance: int = 0
     score: float = 0.0
     category: str = "기타"
+    image_url: str = ""
     metadata: dict = field(default_factory=dict)
 
 
