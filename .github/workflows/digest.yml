@@ -14,6 +14,11 @@ on:
         required: false
         type: boolean
         default: false
+      send_channel_guide_now:
+        description: "고정용 채널 안내를 상태 변경 없이 즉시 발송"
+        required: false
+        type: boolean
+        default: false
       preview_send:
         description: "기존 기사를 상태 변경 없이 테스트 발송"
         required: false
@@ -60,10 +65,13 @@ jobs:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           GEMINI_MODEL: ${{ vars.GEMINI_MODEL || 'gemini-2.5-flash' }}
           SEND_PROMO_NOW: ${{ inputs.send_promo_now || 'false' }}
+          SEND_CHANNEL_GUIDE_NOW: ${{ inputs.send_channel_guide_now || 'false' }}
           PREVIEW_SEND: ${{ inputs.preview_send || 'false' }}
           PREVIEW_LIMIT: ${{ inputs.preview_limit || '1' }}
         run: |
-          if [ "$SEND_PROMO_NOW" = "true" ]; then
+          if [ "$SEND_CHANNEL_GUIDE_NOW" = "true" ]; then
+            python main.py --send-channel-guide
+          elif [ "$SEND_PROMO_NOW" = "true" ]; then
             python main.py --send-promo-now
           elif [ "$PREVIEW_SEND" = "true" ]; then
             python main.py --preview-send --limit "$PREVIEW_LIMIT"

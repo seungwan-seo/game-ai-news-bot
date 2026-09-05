@@ -72,6 +72,19 @@ class TelegramTests(unittest.TestCase):
         self.assertTrue(options["prefer_large_media"])
         self.assertTrue(options["show_above_text"])
 
+    @patch("game_ai_news_bot.telegram.time.sleep")
+    @patch("game_ai_news_bot.telegram.requests.post")
+    def test_silent_photo_disables_notification(self, post: Mock, _sleep: Mock):
+        post.return_value.status_code = 200
+        send_message(
+            "token",
+            ["@channel"],
+            "guide",
+            image_url="https://cdn.example.com/guide.jpg",
+            silent=True,
+        )
+        self.assertTrue(post.call_args.kwargs["json"]["disable_notification"])
+
 
 if __name__ == "__main__":
     unittest.main()

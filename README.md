@@ -77,6 +77,7 @@ GEMINI_MODEL=gemini-2.5-flash
 
 GitHub Actions의 `Run workflow`에서 `다음 자매 채널 홍보만 즉시 발송`을 체크하면 뉴스 수집 없이 홍보 1건만 바로 보낼 수 있다.
 `기존 기사를 상태 변경 없이 테스트 발송`을 체크하고 `테스트 기사 수`를 1~3으로 고르면 일일 한도와 읽음 기록에 영향을 주지 않고 실제 게시물 모양을 확인할 수 있다.
+`고정용 채널 안내를 상태 변경 없이 즉시 발송`은 채널 소개, 자매 채널, 운영자의 Turtle Game을 한 게시물로 조용히 전송한다. 가격·리뷰 수치를 넣지 않은 공지용 문구라 발송 후 Telegram에서 고정해 두면 된다.
 
 ## 첫 배포
 
@@ -125,6 +126,7 @@ python main.py --dry-run             # 전송과 상태 변경 없이 미리보�
 python main.py --dry-run --show-all  # 이미 본 기사도 포함
 python main.py --preview-send --limit 2  # 게시물 2개를 보내되 읽음 상태는 유지
 python main.py --send-promo-now          # 다음 자매 채널 홍보를 즉시 발송
+python main.py --send-channel-guide      # 고정용 채널 안내를 무음으로 즉시 발송
 python main.py --bootstrap           # 현재 기사 기준점 생성
 python main.py --no-ai               # 외부 AI 없이 실행
 python main.py --verbose             # 상세 수집 로그

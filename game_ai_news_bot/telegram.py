@@ -43,6 +43,7 @@ def send_message(
     button_url: str = "",
     image_url: str = "",
     preview_url: str = "",
+    silent: bool = False,
 ) -> None:
     if not token or not chat_ids:
         raise ValueError("TELEGRAM_TOKEN과 TELEGRAM_CHAT_ID가 필요합니다.")
@@ -62,6 +63,7 @@ def send_message(
                 "photo": image_url,
                 "caption": text,
                 "parse_mode": "HTML",
+                "disable_notification": silent,
             }
             if reply_markup:
                 photo_payload["reply_markup"] = reply_markup
@@ -76,6 +78,7 @@ def send_message(
             "chat_id": chat_id,
             "text": text,
             "parse_mode": "HTML",
+            "disable_notification": silent,
             "link_preview_options": {"is_disabled": not bool(preview_url)},
         }
         if preview_url:

@@ -9,6 +9,7 @@ from pathlib import Path
 from game_ai_news_bot.collectors import Collector
 from game_ai_news_bot.config import env_settings, load_config
 from game_ai_news_bot.digest import build_article_post
+from game_ai_news_bot.guide import build_channel_guide_post
 from game_ai_news_bot.promotion import (
     build_promotion_post,
     mark_promotion_sent,
@@ -42,6 +43,11 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="다음 자매 채널 홍보를 즉시 보내고 홍보 주기를 갱신",
     )
+    parser.add_argument(
+        "--send-channel-guide",
+        action="store_true",
+        help="고정용 채널 안내 게시물을 상태 변경 없이 즉시 발송",
+    )
     parser.add_argument("--bootstrap", action="store_true", help="현재 기사 전체를 읽음 처리하고 종료")
     parser.add_argument("--no-ai", action="store_true", help="Gemini 키가 있어도 규칙 기반 요약 사용")
     parser.add_argument("--limit", type=int, help="이번 실행의 최대 기사 수")
@@ -67,6 +73,32 @@ def main() -> int:
     state_path = Path(config["base_dir"]) / "state" / "news_state.json"
     state = load_state(state_path)
     now = datetime.now(timezone.utc)
+
+    if args.send_channel_guide:
+        guide_config = config.get("channel_guide", {})
+        guide_message = build_channel_guide_post(guide_config)
+        turtle_url = str(guide_config.get("turtle_url", "")).strip()
+        image_url = str(guide_config.get("image_url", "")).strip()
+        is_dry = args.dry_run or not (
+            env["telegram_token"] and env["telegram_chat_ids"]
+        )
+        if is_dry:
+            print("[CHANNEL GUIDE DRY-RUN]\n" + guide_message)
+            print(f"[IMAGE] {image_url or '(대표 이미지 없음)'}")
+            print(f"[BUTTON] 🐢 Steam에서 거북이 게임 보기 → {turtle_url}")
+            return 0
+        send_message(
+            env["telegram_token"],
+            env["telegram_chat_ids"],
+            guide_message,
+            button_text="🐢 Steam에서 거북이 게임 보기",
+            button_url=turtle_url,
+            image_url=image_url,
+            preview_url=turtle_url,
+            silent=True,
+        )
+        logging.info("고정용 채널 안내 게시물 발송 완료")
+        return 0
 
     if args.send_promo_now:
         promotion = select_promotion(state, promotion_config)
