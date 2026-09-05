@@ -6,12 +6,19 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 
-DEFAULT_STATE = {"version": 1, "seen": {}, "last_success_at": ""}
+DEFAULT_STATE = {
+    "version": 1,
+    "seen": {},
+    "last_success_at": "",
+    "last_promo_at": "",
+    "promotion_cursor": 0,
+}
 
 
 def load_state(path: str | Path) -> dict:
     state_path = Path(path)
-    state = {"version": 1, "seen": {}, "last_success_at": ""}
+    # 호출 간 seen 딕셔너리가 공유되지 않도록 중첩 값도 새로 만든다.
+    state = {**DEFAULT_STATE, "seen": {}}
     if state_path.exists():
         with state_path.open(encoding="utf-8") as handle:
             loaded = json.load(handle)

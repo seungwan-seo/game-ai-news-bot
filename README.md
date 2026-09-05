@@ -65,6 +65,14 @@ GEMINI_MODEL=gemini-2.5-flash
 
 제목 번역은 [`config.yaml`](config.yaml)의 `translation.enabled`로 끌 수 있다. 번역 대상은 공개된 기사 제목뿐이며 기사 본문이나 Telegram 정보는 번역 서비스로 보내지 않는다.
 
+## 자매 채널 교차 홍보
+
+정상 뉴스가 올라오는 날을 기준으로 5일에 한 번 `@steam_deals_free`를 별도 게시물로 소개한다. 뉴스가 없는 날에는 광고만 단독으로 올리지 않는다. 홍보 성공 시각과 다음 채널 순번은 `state/news_state.json`에 기록하므로 재실행해도 중복되지 않는다.
+
+향후 채널이 늘어나면 [`config.yaml`](config.yaml)의 `promotion.channels`에 이름·링크·설명을 추가한다. 봇은 목록을 순환하므로 특정 채널만 반복 노출되지 않는다.
+
+GitHub Actions의 `Run workflow`에서 `다음 자매 채널 홍보만 즉시 발송`을 체크하면 뉴스 수집 없이 홍보 1건만 바로 보낼 수 있다.
+
 ## 첫 배포
 
 현재 노출된 예전 글을 전부 읽음 처리하고 앞으로 올라오는 글만 받고 싶다면 먼저 실행한다.
@@ -106,6 +114,7 @@ Ubisoft La Forge도 좋은 원문 소스지만 현재 뉴스 목록이 브라우
 python main.py --dry-run             # 전송과 상태 변경 없이 미리보기
 python main.py --dry-run --show-all  # 이미 본 기사도 포함
 python main.py --preview-send --limit 2  # 게시물 2개를 보내되 읽음 상태는 유지
+python main.py --send-promo-now          # 다음 자매 채널 홍보를 즉시 발송
 python main.py --bootstrap           # 현재 기사 기준점 생성
 python main.py --no-ai               # 외부 AI 없이 실행
 python main.py --verbose             # 상세 수집 로그

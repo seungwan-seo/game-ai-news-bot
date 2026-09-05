@@ -4,7 +4,13 @@ on:
   schedule:
     # 매일 08:23 KST. 정각대 혼잡을 피해 약간 늦춘다.
     - cron: "23 23 * * *"
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      send_promo_now:
+        description: "다음 자매 채널 홍보만 즉시 발송"
+        required: false
+        type: boolean
+        default: false
 
 concurrency:
   group: game-ai-digest
@@ -36,7 +42,13 @@ jobs:
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           GEMINI_MODEL: ${{ vars.GEMINI_MODEL || 'gemini-2.5-flash' }}
-        run: python main.py
+          SEND_PROMO_NOW: ${{ inputs.send_promo_now || 'false' }}
+        run: |
+          if [ "$SEND_PROMO_NOW" = "true" ]; then
+            python main.py --send-promo-now
+          else
+            python main.py
+          fi
 
       - name: Commit read state
         # 여러 게시물 중 일부만 성공한 경우에도 성공분의 상태를 보존해 중복 발송을 막는다.

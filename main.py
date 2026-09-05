@@ -9,6 +9,12 @@ from pathlib import Path
 from game_ai_news_bot.collectors import Collector
 from game_ai_news_bot.config import env_settings, load_config
 from game_ai_news_bot.digest import build_article_post
+from game_ai_news_bot.promotion import (
+    build_promotion_post,
+    mark_promotion_sent,
+    promotion_is_due,
+    select_promotion,
+)
 from game_ai_news_bot.ranking import rank_articles, select_diverse
 from game_ai_news_bot.state import load_state, mark_seen, save_state
 from game_ai_news_bot.summarizer import summarize
@@ -24,6 +30,11 @@ def parse_args() -> argparse.Namespace:
         "--preview-send",
         action="store_true",
         help="이미 본 기사도 실제 전송하되 읽음 상태는 변경하지 않음",
+    )
+    parser.add_argument(
+        "--send-promo-now",
+        action="store_true",
+        help="다음 자매 채널 홍보를 즉시 보내고 홍보 주기를 갱신",
     )
     parser.add_argument("--bootstrap", action="store_true", help="현재 기사 전체를 읽음 처리하고 종료")
     parser.add_argument("--no-ai", action="store_true", help="Gemini 키가 있어도 규칙 기반 요약 사용")
@@ -46,8 +57,25 @@ def main() -> int:
     env = env_settings()
     digest_config = config.get("digest", {})
     translation_config = config.get("translation", {})
+    promotion_config = config.get("promotion", {})
     state_path = Path(config["base_dir"]) / "state" / "news_state.json"
     state = load_state(state_path)
+
+    if args.send_promo_now:
+        promotion = select_promotion(state, promotion_config)
+        if promotion is None:
+            logging.error("활성화된 자매 채널 홍보 설정이 없습니다.")
+            return 2
+        promotion_message = build_promotion_post(promotion)
+        is_dry = args.dry_run or not (env["telegram_token"] and env["telegram_chat_ids"])
+        if is_dry:
+            print("[PROMOTION DRY-RUN]\n" + promotion_message)
+            return 0
+        send_message(env["telegram_token"], env["telegram_chat_ids"], promotion_message)
+        mark_promotion_sent(state, promotion_config)
+        save_state(state_path, state)
+        logging.info("자매 채널 홍보 발송 완료: %s", promotion.get("name", ""))
+        return 0
 
     collector = Collector(
         config.get("http", {}),
@@ -98,11 +126,19 @@ def main() -> int:
         )
         for item in items
     ]
+    promotion = None
+    promotion_message = ""
+    if not args.preview_send and promotion_is_due(state, promotion_config, now):
+        promotion = select_promotion(state, promotion_config)
+        if promotion is not None:
+            promotion_message = build_promotion_post(promotion)
 
     is_dry = args.dry_run or not (env["telegram_token"] and env["telegram_chat_ids"])
     if is_dry:
         for index, message in enumerate(messages, 1):
             print(f"[DRY-RUN {index}/{len(messages)}]\n{message}\n")
+        if promotion_message:
+            print("[PROMOTION DRY-RUN]\n" + promotion_message)
         if errors:
             print("\n[수집 실패 소스]\n- " + "\n- ".join(errors))
         return 0
@@ -118,6 +154,12 @@ def main() -> int:
         # 성공 뒤 차순위 후보도 읽음 처리해 오래된 뉴스가 다음 날 밀려 나오지 않게 한다.
         mark_seen(state, [item.url for item in fresh], now)
         save_state(state_path, state)
+        if promotion is not None:
+            send_message(
+                env["telegram_token"], env["telegram_chat_ids"], promotion_message
+            )
+            mark_promotion_sent(state, promotion_config, now)
+            save_state(state_path, state)
     logging.info(
         "%s %d건 발송 완료",
         "미리보기 게시물" if args.preview_send else "뉴스 게시물",
