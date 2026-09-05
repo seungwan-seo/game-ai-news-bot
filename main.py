@@ -8,7 +8,7 @@ from pathlib import Path
 
 from game_ai_news_bot.collectors import Collector
 from game_ai_news_bot.config import env_settings, load_config
-from game_ai_news_bot.digest import build_digest
+from game_ai_news_bot.digest import build_article_post
 from game_ai_news_bot.ranking import rank_articles, select_diverse
 from game_ai_news_bot.state import load_state, mark_seen, save_state
 from game_ai_news_bot.summarizer import summarize
@@ -20,6 +20,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--config", default="config.yaml")
     parser.add_argument("--dry-run", action="store_true", help="전송·상태 저장 없이 콘솔에 출력")
     parser.add_argument("--show-all", action="store_true", help="이미 본 기사도 후보에 포함")
+    parser.add_argument(
+        "--preview-send",
+        action="store_true",
+        help="이미 본 기사도 실제 전송하되 읽음 상태는 변경하지 않음",
+    )
     parser.add_argument("--bootstrap", action="store_true", help="현재 기사 전체를 읽음 처리하고 종료")
     parser.add_argument("--no-ai", action="store_true", help="Gemini 키가 있어도 규칙 기반 요약 사용")
     parser.add_argument("--limit", type=int, help="이번 실행의 최대 기사 수")
@@ -58,7 +63,7 @@ def main() -> int:
     freshness_days = int(digest_config.get("freshness_days", 4))
     cutoff = now - timedelta(days=freshness_days)
     fresh = [item for item in ranked if item.published_at is None or item.published_at >= cutoff]
-    if not args.show_all:
+    if not (args.show_all or args.preview_send):
         fresh = [item for item in fresh if item.url not in state["seen"]]
 
     if args.bootstrap:
@@ -78,32 +83,46 @@ def main() -> int:
         return 0
 
     api_key = "" if args.no_ai else env["gemini_api_key"]
-    items, trend = summarize(
+    items, _trend = summarize(
         selected,
         api_key=api_key,
         model=env["gemini_model"],
         translate_titles=bool(translation_config.get("enabled", True)),
         translation_timeout=int(translation_config.get("timeout_seconds", 12)),
     )
-    message = build_digest(
-        items,
-        trend,
-        title=digest_config.get("title", "게임 AI 모닝 브리핑"),
-        timezone_name=digest_config.get("timezone", "Asia/Seoul"),
-    )
+    messages = [
+        build_article_post(
+            item,
+            title=digest_config.get("title", "게임 AI 모닝 브리핑"),
+            timezone_name=digest_config.get("timezone", "Asia/Seoul"),
+        )
+        for item in items
+    ]
 
     is_dry = args.dry_run or not (env["telegram_token"] and env["telegram_chat_ids"])
     if is_dry:
-        print("[DRY-RUN]\n" + message)
+        for index, message in enumerate(messages, 1):
+            print(f"[DRY-RUN {index}/{len(messages)}]\n{message}\n")
         if errors:
             print("\n[수집 실패 소스]\n- " + "\n- ".join(errors))
         return 0
 
-    send_message(env["telegram_token"], env["telegram_chat_ids"], message)
-    # 발송 성공 뒤 이번 실행에서 확인한 후보 전체를 읽음 처리해 오래된 차순위가 밀려 나오지 않게 한다.
-    mark_seen(state, [item.url for item in fresh], now)
-    save_state(state_path, state)
-    logging.info("브리핑 %d건 발송 완료", len(selected))
+    for item, message in zip(items, messages, strict=True):
+        send_message(env["telegram_token"], env["telegram_chat_ids"], message)
+        if not args.preview_send:
+            # 중간 게시에서 실패해도 이미 성공한 기사가 다음 실행에 중복되지 않게 즉시 기록한다.
+            mark_seen(state, [item.article.url], now)
+            save_state(state_path, state)
+
+    if not args.preview_send:
+        # 성공 뒤 차순위 후보도 읽음 처리해 오래된 뉴스가 다음 날 밀려 나오지 않게 한다.
+        mark_seen(state, [item.url for item in fresh], now)
+        save_state(state_path, state)
+    logging.info(
+        "%s %d건 발송 완료",
+        "미리보기 게시물" if args.preview_send else "뉴스 게시물",
+        len(selected),
+    )
     return 0
 
 

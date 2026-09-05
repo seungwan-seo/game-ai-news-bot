@@ -39,7 +39,8 @@ jobs:
         run: python main.py
 
       - name: Commit read state
-        if: success()
+        # 여러 게시물 중 일부만 성공한 경우에도 성공분의 상태를 보존해 중복 발송을 막는다.
+        if: always()
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"

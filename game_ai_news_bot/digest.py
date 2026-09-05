@@ -21,8 +21,8 @@ def _esc(value: str) -> str:
     return html.escape(str(value), quote=False)
 
 
-def build_digest(
-    items: list[DigestItem], trend: str, title: str, timezone_name: str = "Asia/Seoul"
+def build_article_post(
+    item: DigestItem, title: str, timezone_name: str = "Asia/Seoul"
 ) -> str:
     try:
         local_timezone = ZoneInfo(timezone_name)
@@ -32,24 +32,22 @@ def build_digest(
             raise
         local_timezone = timezone(timedelta(hours=9), name="KST")
     now = datetime.now(local_timezone)
-    header = f"<b>🎮 {_esc(title)}</b>\n<code>{now:%Y-%m-%d}</code> · {len(items)}개 소식"
-    footer = f"\n\n<b>📌 오늘의 흐름</b>\n{_esc(trend)}"
-    blocks: list[str] = []
-    for index, item in enumerate(items, 1):
-        article = item.article
-        perspective = PERSPECTIVE_LABELS.get(article.perspective, "출처")
-        original_title = ""
-        if item.title_ko.casefold() != article.title.casefold():
-            original_title = f"\n<i>EN · {_esc(article.title)}</i>"
-        block = (
-            f"\n\n<b>{index}. {_esc(article.category)}  {_esc(item.title_ko)}</b>"
-            f"{original_title}\n"
-            f"{_esc(item.summary_ko)}\n"
-            f"💡 {_esc(item.insight_ko)}\n"
-            f'<a href="{html.escape(article.url, quote=True)}">'
-            f'{_esc(article.source_name)} · {perspective} · 원문</a>'
-        )
-        if len(header + "".join(blocks) + block + footer) > TELEGRAM_SAFE_LIMIT:
-            break
-        blocks.append(block)
-    return header + "".join(blocks) + footer
+    article = item.article
+    perspective = PERSPECTIVE_LABELS.get(article.perspective, "출처")
+    original_title = ""
+    if item.title_ko.casefold() != article.title.casefold():
+        original_title = f"\n<i>EN · {_esc(article.title)}</i>"
+    message = (
+        f"<b>🎮 {_esc(title)}</b>\n"
+        f"<code>{now:%Y-%m-%d}</code>\n\n"
+        f"<b>{_esc(article.category)}</b>\n"
+        f"<b>{_esc(item.title_ko)}</b>"
+        f"{original_title}\n\n"
+        f"{_esc(item.summary_ko)}\n\n"
+        f"💡 <b>개발 인사이트</b>\n{_esc(item.insight_ko)}\n\n"
+        f'<a href="{html.escape(article.url, quote=True)}">'
+        f'{_esc(article.source_name)} · {perspective} · 원문 보기</a>'
+    )
+    if len(message) > TELEGRAM_SAFE_LIMIT:
+        raise ValueError("기사 게시물이 Telegram 안전 길이를 초과했습니다.")
+    return message
