@@ -12,7 +12,11 @@ DEFAULT_STATE = {
     "last_success_at": "",
     "last_promo_at": "",
     "promotion_cursor": 0,
+    "delivery_day_kst": "",
+    "delivery_count": 0,
 }
+
+KST = timezone(timedelta(hours=9), name="KST")
 
 
 def load_state(path: str | Path) -> dict:
@@ -35,6 +39,27 @@ def mark_seen(state: dict, urls: list[str], now: datetime | None = None) -> None
     for url in urls:
         state["seen"][url] = timestamp
     state["last_success_at"] = timestamp
+
+
+def delivered_today(state: dict, now: datetime | None = None) -> int:
+    now = now or datetime.now(timezone.utc)
+    current_day = now.astimezone(KST).date().isoformat()
+    if state.get("delivery_day_kst") != current_day:
+        return 0
+    try:
+        return max(0, int(state.get("delivery_count", 0)))
+    except (TypeError, ValueError):
+        return 0
+
+
+def mark_delivered(state: dict, urls: list[str], now: datetime | None = None) -> None:
+    now = now or datetime.now(timezone.utc)
+    current_day = now.astimezone(KST).date().isoformat()
+    current_count = delivered_today(state, now)
+    unique_urls = list(dict.fromkeys(urls))
+    mark_seen(state, unique_urls, now)
+    state["delivery_day_kst"] = current_day
+    state["delivery_count"] = current_count + len(unique_urls)
 
 
 def prune_state(state: dict, max_age_days: int = 180, max_items: int = 6000) -> None:

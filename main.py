@@ -16,7 +16,13 @@ from game_ai_news_bot.promotion import (
     select_promotion,
 )
 from game_ai_news_bot.ranking import rank_articles, select_diverse
-from game_ai_news_bot.state import load_state, mark_seen, save_state
+from game_ai_news_bot.state import (
+    delivered_today,
+    load_state,
+    mark_delivered,
+    mark_seen,
+    save_state,
+)
 from game_ai_news_bot.summarizer import summarize
 from game_ai_news_bot.telegram import send_message
 
@@ -60,6 +66,7 @@ def main() -> int:
     promotion_config = config.get("promotion", {})
     state_path = Path(config["base_dir"]) / "state" / "news_state.json"
     state = load_state(state_path)
+    now = datetime.now(timezone.utc)
 
     if args.send_promo_now:
         promotion = select_promotion(state, promotion_config)
@@ -87,7 +94,6 @@ def main() -> int:
         return 2
 
     ranked = rank_articles(articles, config)
-    now = datetime.now(timezone.utc)
     freshness_days = int(digest_config.get("freshness_days", 4))
     cutoff = now - timedelta(days=freshness_days)
     fresh = [item for item in ranked if item.published_at is None or item.published_at >= cutoff]
@@ -100,7 +106,20 @@ def main() -> int:
         print(f"기준점 생성 완료: {len(ranked)}건을 읽음 처리했습니다.")
         return 0
 
-    limit = args.limit or int(digest_config.get("max_items", 6))
+    per_run_limit = int(
+        digest_config.get("max_items_per_run", digest_config.get("max_items", 1))
+    )
+    limit = args.limit or per_run_limit
+    is_live_delivery = not args.dry_run and not args.preview_send and bool(
+        env["telegram_token"] and env["telegram_chat_ids"]
+    )
+    daily_limit = max(1, int(digest_config.get("daily_post_limit", 10)))
+    if is_live_delivery:
+        remaining_today = daily_limit - delivered_today(state, now)
+        if remaining_today <= 0:
+            logging.info("오늘의 뉴스 발송 한도 %d건을 이미 채웠습니다.", daily_limit)
+            return 0
+        limit = min(limit, remaining_today)
     selected = select_diverse(
         fresh,
         limit=max(1, limit),
@@ -121,7 +140,7 @@ def main() -> int:
     messages = [
         build_article_post(
             item,
-            title=digest_config.get("title", "게임 AI 모닝 브리핑"),
+            title=digest_config.get("title", "게임 AI 뉴스"),
             timezone_name=digest_config.get("timezone", "Asia/Seoul"),
         )
         for item in items
@@ -147,13 +166,11 @@ def main() -> int:
         send_message(env["telegram_token"], env["telegram_chat_ids"], message)
         if not args.preview_send:
             # 중간 게시에서 실패해도 이미 성공한 기사가 다음 실행에 중복되지 않게 즉시 기록한다.
-            mark_seen(state, [item.article.url], now)
+            mark_delivered(state, [item.article.url], now)
             save_state(state_path, state)
 
     if not args.preview_send:
-        # 성공 뒤 차순위 후보도 읽음 처리해 오래된 뉴스가 다음 날 밀려 나오지 않게 한다.
-        mark_seen(state, [item.url for item in fresh], now)
-        save_state(state_path, state)
+        # 선택하지 않은 좋은 후보는 읽음 처리하지 않고 다음 예약 회차로 넘긴다.
         if promotion is not None:
             send_message(
                 env["telegram_token"], env["telegram_chat_ids"], promotion_message

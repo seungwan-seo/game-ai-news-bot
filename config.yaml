@@ -1,8 +1,8 @@
 digest:
-  title: "게임 AI 모닝 브리핑"
+  title: "게임 AI 뉴스"
   timezone: "Asia/Seoul"
-  delivery_hour_kst: 8
-  max_items: 6
+  daily_post_limit: 10
+  max_items_per_run: 1
   max_items_per_source: 2
   freshness_days: 4
   max_description_chars: 2200

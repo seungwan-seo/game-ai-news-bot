@@ -1,6 +1,6 @@
 # game-ai-news-bot
 
-게임 AI 개발 동향을 RSS·연구 API·공식 기술 블로그에서 모아 중요도와 중복을 정리한 뒤, 매일 아침 텔레그램에 기사별로 게시하는 오픈소스 봇.
+게임 AI 개발 동향을 RSS·연구 API·공식 기술 블로그에서 모아 중요도와 중복을 정리한 뒤, 하루 동안 간격을 두고 텔레그램에 기사별로 게시하는 오픈소스 봇.
 
 ## 무엇을 수집하나
 
@@ -81,11 +81,15 @@ GitHub Actions의 `Run workflow`에서 `다음 자매 채널 홍보만 즉시 �
 python main.py --bootstrap
 ```
 
-반대로 첫날부터 최근 4일의 상위 기사 6개를 받고 싶으면 기준점을 만들지 않고 바로 실행한다. 발송에 성공한 경우에만 `state/news_state.json`을 갱신한다.
+반대로 기존 후보도 받고 싶으면 기준점을 만들지 않고 바로 실행한다. 발송에 성공한 기사만 `state/news_state.json`에 기록되며, 이번 회차에 선택되지 않은 후보는 다음 회차로 넘어간다.
 
 ## GitHub Actions
 
-[`.github/workflows/digest.yml`](.github/workflows/digest.yml)은 매일 **08:23 KST**에 실행된다. 저장소 Secrets에 아래 값을 등록한다.
+[`.github/workflows/digest.yml`](.github/workflows/digest.yml)은 매일 **08:23~21:53 KST 사이에 90분 간격으로 10회** 실행된다.
+
+`08:23 · 09:53 · 11:23 · 12:53 · 14:23 · 15:53 · 17:23 · 18:53 · 20:23 · 21:53`
+
+각 회차는 관련도 높은 새 기사 1개만 보내므로 하루 최대 10개다. 적합한 새 기사가 없으면 해당 회차는 아무것도 보내지 않는다. 저장소 Secrets에 아래 값을 등록한다.
 
 - `TELEGRAM_TOKEN`
 - `TELEGRAM_CHAT_ID`
@@ -97,7 +101,8 @@ python main.py --bootstrap
 
 [`config.yaml`](config.yaml)에서 다음을 바꿀 수 있다.
 
-- `max_items`: 하루 기사 수
+- `daily_post_limit`: 한국 시간 기준 하루 최대 뉴스 게시물 수
+- `max_items_per_run`: 예약 실행 1회당 최대 기사 수
 - `max_items_per_source`: 한 출처가 브리핑을 독점하지 않게 하는 상한
 - `freshness_days`: 며칠 이내 글만 후보로 볼지
 - `source_weight`: 출처 우선순위
