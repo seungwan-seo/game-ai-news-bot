@@ -14,8 +14,10 @@ class ChannelGuideTests(unittest.TestCase):
             }
         )
         self.assertIn("게임 AI 개발 뉴스 안내", post)
+        self.assertIn("운영자가 만든 Steam 게임", post)
         self.assertIn("https://t.me/steam_deals_free", post)
         self.assertIn("https://store.steampowered.com/app/3952050/Turtle_Game/", post)
+        self.assertNotIn("앞서 해보기", post)
         self.assertNotIn("reviews", post.casefold())
         self.assertNotIn("₩", post)
 
