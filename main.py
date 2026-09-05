@@ -77,8 +77,15 @@ def main() -> int:
         is_dry = args.dry_run or not (env["telegram_token"] and env["telegram_chat_ids"])
         if is_dry:
             print("[PROMOTION DRY-RUN]\n" + promotion_message)
+            print(f'[BUTTON] 🎁 Steam 할인 채널 방문하기 → {promotion["url"]}')
             return 0
-        send_message(env["telegram_token"], env["telegram_chat_ids"], promotion_message)
+        send_message(
+            env["telegram_token"],
+            env["telegram_chat_ids"],
+            promotion_message,
+            button_text="🎁 Steam 할인 채널 방문하기",
+            button_url=str(promotion["url"]),
+        )
         mark_promotion_sent(state, promotion_config)
         save_state(state_path, state)
         logging.info("자매 채널 홍보 발송 완료: %s", promotion.get("name", ""))
@@ -154,16 +161,26 @@ def main() -> int:
 
     is_dry = args.dry_run or not (env["telegram_token"] and env["telegram_chat_ids"])
     if is_dry:
-        for index, message in enumerate(messages, 1):
+        for index, (item, message) in enumerate(
+            zip(items, messages, strict=True), 1
+        ):
             print(f"[DRY-RUN {index}/{len(messages)}]\n{message}\n")
+            print(f"[BUTTON] 🔗 원문 기사 바로 보기 → {item.article.url}\n")
         if promotion_message:
             print("[PROMOTION DRY-RUN]\n" + promotion_message)
+            print(f'[BUTTON] 🎁 Steam 할인 채널 방문하기 → {promotion["url"]}')
         if errors:
             print("\n[수집 실패 소스]\n- " + "\n- ".join(errors))
         return 0
 
     for item, message in zip(items, messages, strict=True):
-        send_message(env["telegram_token"], env["telegram_chat_ids"], message)
+        send_message(
+            env["telegram_token"],
+            env["telegram_chat_ids"],
+            message,
+            button_text="🔗 원문 기사 바로 보기",
+            button_url=item.article.url,
+        )
         if not args.preview_send:
             # 중간 게시에서 실패해도 이미 성공한 기사가 다음 실행에 중복되지 않게 즉시 기록한다.
             mark_delivered(state, [item.article.url], now)
@@ -173,7 +190,11 @@ def main() -> int:
         # 선택하지 않은 좋은 후보는 읽음 처리하지 않고 다음 예약 회차로 넘긴다.
         if promotion is not None:
             send_message(
-                env["telegram_token"], env["telegram_chat_ids"], promotion_message
+                env["telegram_token"],
+                env["telegram_chat_ids"],
+                promotion_message,
+                button_text="🎁 Steam 할인 채널 방문하기",
+                button_url=str(promotion["url"]),
             )
             mark_promotion_sent(state, promotion_config, now)
             save_state(state_path, state)

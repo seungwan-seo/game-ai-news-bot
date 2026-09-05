@@ -51,6 +51,7 @@ class PromotionTests(unittest.TestCase):
         self.assertIn("Steam &amp; Deals", message)
         self.assertIn("무료 &lt;게임&gt;", message)
         self.assertIn('href="https://t.me/steam_deals_free"', message)
+        self.assertNotIn("채널 바로가기", message)
 
 
 if __name__ == "__main__":

@@ -34,6 +34,7 @@ def build_article_post(
     now = datetime.now(local_timezone)
     article = item.article
     perspective = PERSPECTIVE_LABELS.get(article.perspective, "출처")
+    article_url = html.escape(article.url, quote=True)
     original_title = ""
     if item.title_ko.casefold() != article.title.casefold():
         original_title = f"\n<i>EN · {_esc(article.title)}</i>"
@@ -41,12 +42,11 @@ def build_article_post(
         f"<b>🎮 {_esc(title)}</b>\n"
         f"<code>{now:%Y-%m-%d}</code>\n\n"
         f"<b>{_esc(article.category)}</b>\n"
-        f"<b>{_esc(item.title_ko)}</b>"
+        f'<b><a href="{article_url}">🔗 {_esc(item.title_ko)}</a></b>'
         f"{original_title}\n\n"
         f"{_esc(item.summary_ko)}\n\n"
         f"💡 <b>개발 인사이트</b>\n{_esc(item.insight_ko)}\n\n"
-        f'<a href="{html.escape(article.url, quote=True)}">'
-        f'{_esc(article.source_name)} · {perspective} · 원문 보기</a>'
+        f"<i>출처 · {_esc(article.source_name)} · {perspective}</i>"
     )
     if len(message) > TELEGRAM_SAFE_LIMIT:
         raise ValueError("기사 게시물이 Telegram 안전 길이를 초과했습니다.")

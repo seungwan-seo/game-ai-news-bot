@@ -16,6 +16,10 @@ class DigestTests(unittest.TestCase):
         self.assertIn("A &amp; B", message)
         self.assertIn("개발 인사이트", message)
         self.assertIn('href="https://example.com/a"', message)
+        self.assertLess(
+            message.index('href="https://example.com/a"'), message.index("A &amp; B")
+        )
+        self.assertIn("출처 · A&amp;B ·", message)
 
     def test_omits_duplicate_original_title(self):
         article = Article("s", "Source", "같은 제목", "https://example.com/a")

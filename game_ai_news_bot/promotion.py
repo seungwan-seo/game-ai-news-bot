@@ -54,9 +54,8 @@ def build_promotion_post(entry: dict) -> str:
     description_block = f"\n{description}\n" if description else "\n"
     return (
         "<b>🤝 자매 채널 추천</b>\n\n"
-        f"<b>{name}</b>\n"
-        f"{description_block}\n"
-        f'<a href="{url}">👉 채널 바로가기</a>'
+        f'<b><a href="{url}">{name}</a></b>\n'
+        f"{description_block}"
     )
 
 
