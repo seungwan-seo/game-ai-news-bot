@@ -72,6 +72,7 @@ GEMINI_MODEL=gemini-2.5-flash
 향후 채널이 늘어나면 [`config.yaml`](config.yaml)의 `promotion.channels`에 이름·링크·설명을 추가한다. 봇은 목록을 순환하므로 특정 채널만 반복 노출되지 않는다.
 
 GitHub Actions의 `Run workflow`에서 `다음 자매 채널 홍보만 즉시 발송`을 체크하면 뉴스 수집 없이 홍보 1건만 바로 보낼 수 있다.
+`기존 기사 1건을 상태 변경 없이 테스트 발송`을 체크하면 일일 한도와 읽음 기록에 영향을 주지 않고 실제 게시물 모양을 확인할 수 있다.
 
 ## 첫 배포
 

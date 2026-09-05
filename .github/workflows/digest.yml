@@ -14,6 +14,11 @@ on:
         required: false
         type: boolean
         default: false
+      preview_send:
+        description: "기존 기사 1건을 상태 변경 없이 테스트 발송"
+        required: false
+        type: boolean
+        default: false
 
 concurrency:
   group: game-ai-digest
@@ -46,9 +51,12 @@ jobs:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           GEMINI_MODEL: ${{ vars.GEMINI_MODEL || 'gemini-2.5-flash' }}
           SEND_PROMO_NOW: ${{ inputs.send_promo_now || 'false' }}
+          PREVIEW_SEND: ${{ inputs.preview_send || 'false' }}
         run: |
           if [ "$SEND_PROMO_NOW" = "true" ]; then
             python main.py --send-promo-now
+          elif [ "$PREVIEW_SEND" = "true" ]; then
+            python main.py --preview-send --limit 1
           else
             python main.py
           fi
