@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import logging
 import sys
 from datetime import datetime, timedelta, timezone
@@ -9,6 +10,13 @@ from pathlib import Path
 from game_ai_news_bot.collectors import Collector
 from game_ai_news_bot.config import env_settings, load_config
 from game_ai_news_bot.digest import build_article_post
+from game_ai_news_bot.feedback import (
+    build_feedback_report,
+    preference_adjustment,
+    prune_feedback,
+    register_deliveries,
+)
+from game_ai_news_bot.feedback_collection import FeedbackCollectionError, collect_feedback
 from game_ai_news_bot.guide import build_channel_guide_post
 from game_ai_news_bot.promotion import (
     build_promotion_post,
@@ -26,7 +34,7 @@ from game_ai_news_bot.state import (
     save_state,
 )
 from game_ai_news_bot.summarizer import summarize
-from game_ai_news_bot.telegram import send_message
+from game_ai_news_bot.telegram import TelegramSendError, send_message
 
 
 def parse_args() -> argparse.Namespace:
@@ -55,8 +63,16 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--source", help="설정에 등록된 소스 ID로 수집 범위 제한")
     parser.add_argument("--article-url", help="피드에 존재하는 특정 기사 1건만 정상 발송")
     parser.add_argument("--no-promo", action="store_true", help="이번 회차 자매 채널 홍보 생략")
+    parser.add_argument("--collect-feedback", action="store_true", help="반응만 수집·저장하고 종료 (발송 없음)")
+    parser.add_argument("--feedback-report", action="store_true", help="저장된 반응 통계를 콘솔에 출력 (API 호출 없음)")
     parser.add_argument("--verbose", action="store_true")
     args = parser.parse_args()
+    if args.collect_feedback or args.feedback_report:
+        if (args.collect_feedback and args.feedback_report) or any((
+            args.bootstrap, args.send_promo_now, args.send_channel_guide,
+            args.article_url, args.preview_send,
+        )):
+            parser.error("반응 수집/조회는 다른 발송·기준점 옵션과 함께 사용할 수 없습니다.")
     if args.article_url and (not args.source or args.preview_send or args.show_all):
         parser.error("--article-url은 --source와 함께 사용하며 읽음 기록을 우회할 수 없습니다.")
     if args.article_url and (args.bootstrap or args.send_promo_now or args.send_channel_guide):
@@ -80,14 +96,34 @@ def main() -> int:
         level=logging.DEBUG if args.verbose else logging.INFO,
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
     )
+    # requests의 DEBUG 로그에는 토큰이 포함된 Telegram URL이 실릴 수 있다.
+    logging.getLogger("urllib3.connectionpool").setLevel(logging.WARNING)
     config = load_config(args.config)
     env = env_settings()
     digest_config = config.get("digest", {})
     translation_config = config.get("translation", {})
     promotion_config = config.get("promotion", {})
+    feedback_config = config.get("feedback", {})
     state_path = Path(config["base_dir"]) / "state" / "news_state.json"
     state = load_state(state_path)
     now = datetime.now(timezone.utc)
+
+    if args.feedback_report or (args.collect_feedback and args.dry_run):
+        print(json.dumps(build_feedback_report(state, feedback_config, now), ensure_ascii=False, indent=2))
+        return 0
+
+    if args.collect_feedback:
+        if not feedback_config.get("enabled", False):
+            logging.error("반응 수집이 설정에서 비활성화되어 있습니다.")
+            return 2
+        try:
+            collect_feedback(state, env["telegram_token"], feedback_config, now)
+            save_state(state_path, state)
+        except FeedbackCollectionError as exc:
+            logging.error("%s", exc)
+            return 2
+        print(json.dumps(build_feedback_report(state, feedback_config, now), ensure_ascii=False, indent=2))
+        return 0
 
     if args.send_channel_guide:
         guide_config = config.get("channel_guide", {})
@@ -138,6 +174,14 @@ def main() -> int:
         logging.info("자매 채널 홍보 발송 완료: %s", promotion.get("name", ""))
         return 0
 
+    # 뉴스가 없어도 반응은 수집한다. 미리보기·기준점 생성·광고/공지에는 API 호출을 덧붙이지 않는다.
+    if feedback_config.get("enabled", False) and not (args.dry_run or args.bootstrap) and env["telegram_token"]:
+        try:
+            collect_feedback(state, env["telegram_token"], feedback_config, now)
+            save_state(state_path, state)
+        except FeedbackCollectionError as exc:
+            logging.warning("%s; 이번 뉴스 발송은 계속합니다.", exc)
+
     collector = Collector(
         config.get("http", {}),
         description_limit=int(digest_config.get("max_description_chars", 900)),
@@ -154,6 +198,14 @@ def main() -> int:
         return 2
 
     ranked = rank_articles(articles, config)
+    if feedback_config.get("enabled", False) and feedback_config.get("apply_to_ranking", False):
+        report = build_feedback_report(state, feedback_config, now)
+        for article in ranked:
+            adjustment = preference_adjustment(article, report, feedback_config)
+            article.score += adjustment
+            article.metadata["feedback_adjustment"] = adjustment
+        # 품질·관련성 필터를 통과한 기사에만 보조 점수를 더한다.
+        ranked.sort(key=lambda article: article.score, reverse=True)
     freshness_days = int(digest_config.get("freshness_days", 4))
     cutoff = now - timedelta(days=freshness_days)
     # 미리보기는 게시물 레이아웃 검증이 목적이므로 최신 후보가 요청 수보다
@@ -168,7 +220,8 @@ def main() -> int:
         ]
     )
     if not (args.show_all or args.preview_send):
-        fresh = [item for item in fresh if not item.identity_urls.intersection(state["seen"])]
+        blocked = set(state["seen"]) | set(state.get("pending_delivery_review", {}))
+        fresh = [item for item in fresh if not item.identity_urls.intersection(blocked)]
     if args.article_url:
         fresh = [item for item in fresh if item.url == args.article_url]
 
@@ -218,7 +271,7 @@ def main() -> int:
         collector.enrich_article(article)
     selected = deduplicate(selected)
     if not (args.show_all or args.preview_send):
-        selected = [item for item in selected if not item.identity_urls.intersection(state["seen"])]
+        selected = [item for item in selected if not item.identity_urls.intersection(blocked)]
     if not selected:
         logging.info("원문 주소를 확인한 결과 이미 발송된 기사입니다.")
         return 2 if args.article_url else 0
@@ -262,24 +315,43 @@ def main() -> int:
         return 0
 
     for item, message in zip(items, messages, strict=True):
-        send_message(
-            env["telegram_token"],
-            env["telegram_chat_ids"],
-            message,
-            button_text=item.article.metadata.get("button_text", "🔗 원문 기사 바로 보기"),
-            button_url=item.article.url,
-            image_url=item.article.image_url,
-            preview_url=item.article.url,
-            silent=bool(args.article_url),
-        )
-        if not args.preview_send:
+        def record_success(receipts):
+            delivery_now = datetime.now(timezone.utc)
             # 중간 게시에서 실패해도 이미 성공한 기사가 다음 실행에 중복되지 않게 즉시 기록한다.
             mark_delivered(
-                state, [item.article.url], now,
+                state, [item.article.url], delivery_now,
                 source_id=item.article.source_id,
                 aliases=list(item.article.identity_urls - {item.article.url}),
             )
+            if feedback_config.get("enabled", False):
+                if not isinstance(state.get("feedback"), dict):
+                    state["feedback"] = {}
+                state.setdefault("feedback", {})["window_hours"] = feedback_config.get("window_hours", 48)
+                register_deliveries(state, item.article, receipts, delivery_now)
+                prune_feedback(state, delivery_now)
             save_state(state_path, state)
+
+        try:
+            receipts = send_message(
+                env["telegram_token"],
+                env["telegram_chat_ids"],
+                message,
+                button_text=item.article.metadata.get("button_text", "🔗 원문 기사 바로 보기"),
+                button_url=item.article.url,
+                image_url=item.article.image_url,
+                preview_url=item.article.url,
+                silent=bool(args.article_url),
+            )
+        except TelegramSendError as exc:
+            if exc.receipts:
+                record_success(exc.receipts)
+            if exc.delivery_uncertain:
+                # API 응답이 유실됐으면 자동 재발송하지 않고 운영자 확인을 기다린다.
+                state.setdefault("pending_delivery_review", {})[item.article.url] = now.isoformat()
+                save_state(state_path, state)
+            logging.error("%s", exc)
+            return 2
+        record_success(receipts)
 
     if not args.preview_send:
         # 선택하지 않은 좋은 후보는 읽음 처리하지 않고 다음 예약 회차로 넘긴다.

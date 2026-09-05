@@ -18,6 +18,19 @@ translation:
   enabled: true
   timeout_seconds: 12
 
+# 채널의 익명 👍/👎 집계만 수집한다. 뉴스 선별 반영은 표본 검토 후 수동 활성화.
+feedback:
+  enabled: true
+  apply_to_ranking: false
+  window_hours: 48
+  lookback_days: 30
+  min_posts: 5
+  min_reacted_posts: 3
+  min_reactions: 20
+  prior_reactions: 10
+  max_adjustment: 3
+  timeout_seconds: 15
+
 # 공지 고정용 채널 안내. 가격·리뷰처럼 변하는 수치는 넣지 않는다.
 channel_guide:
   steam_channel_url: "https://t.me/steam_deals_free"

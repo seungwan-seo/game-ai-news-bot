@@ -4,13 +4,15 @@ import io
 import tempfile
 import unittest
 from contextlib import ExitStack, redirect_stdout, redirect_stderr
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import patch
 
 import main as app
+from game_ai_news_bot.feedback_collection import FeedbackCollectionError
 from game_ai_news_bot.models import Article
 from game_ai_news_bot.state import load_state, mark_delivered, save_state
+from game_ai_news_bot.telegram import TelegramSendError
 
 
 class ProductionDeliveryTests(unittest.TestCase):
@@ -28,7 +30,7 @@ class ProductionDeliveryTests(unittest.TestCase):
             "digest": {"daily_post_limit": 10, "max_items_per_run": 1},
             "promotion": {
                 "enabled": True, "interval_days": 5,
-                "channels": [{"name": "Sister", "url": "https://example.com/promo"}],
+                "channels": [{"name": "Sister", "url": "https://t.me/sister_test"}],
             },
         }
         self.env = {
@@ -44,7 +46,7 @@ class ProductionDeliveryTests(unittest.TestCase):
         )
         self.original_url = "https://example.com/coding-comparison"
 
-    def execute(self, *args):
+    def execute(self, *args, send_error=None, poll_error=None, receipt_date=None):
         with ExitStack() as stack:
             stack.enter_context(patch("sys.argv", ["main.py", *args]))
             stack.enter_context(patch.object(app, "load_config", return_value=self.config))
@@ -58,6 +60,19 @@ class ProductionDeliveryTests(unittest.TestCase):
 
             collector.enrich_article.side_effect = enrich
             sender = stack.enter_context(patch.object(app, "send_message"))
+            sender.return_value = [{
+                "chat_id": -100123, "message_id": 81, "chat_type": "channel",
+                "date": receipt_date or int(datetime.now(timezone.utc).timestamp()),
+            }]
+            if send_error:
+                sender.side_effect = send_error
+            self.poller = stack.enter_context(patch.object(app, "collect_feedback"))
+
+            def poll(state, token, config, now):
+                state.setdefault("feedback", {})["last_poll_at"] = now.isoformat()
+                return {"received": 0, "changed": 0}
+
+            self.poller.side_effect = poll_error or poll
             # A test must never make live translation or Telegram requests.
             stack.enter_context(patch("requests.sessions.Session.request", side_effect=AssertionError("network forbidden")))
             output = stack.enter_context(redirect_stdout(io.StringIO()))
@@ -109,6 +124,92 @@ class ProductionDeliveryTests(unittest.TestCase):
                 sender.assert_not_called()
                 self.assertIn("DRY-RUN", output)
                 self.assertFalse(self.state_path.exists())
+
+    def test_news_receipts_are_registered_for_reaction_analysis(self):
+        self.config["feedback"] = {"enabled": True}
+        result, sender, _, _ = self.single()
+        self.assertEqual(result, 0)
+        self.poller.assert_called_once()
+        sender.assert_called_once()
+        state = load_state(self.state_path)
+        post = state["feedback"]["posts"]["-100123:81"]
+        self.assertEqual(post["url"], self.article.url)
+        self.assertEqual(post["source_id"], "geeknews")
+        self.assertEqual(state["delivery_count"], 1)
+
+    def test_reaction_only_collects_without_news_or_promotion(self):
+        self.config["feedback"] = {"enabled": True}
+        result, sender, collector, _ = self.execute("--collect-feedback")
+        self.assertEqual(result, 0)
+        sender.assert_not_called()
+        collector.collect_all.assert_not_called()
+        self.poller.assert_called_once()
+        self.assertEqual(load_state(self.state_path)["delivery_count"], 0)
+
+    def test_receipt_after_collection_start_is_not_pruned(self):
+        self.config["feedback"] = {"enabled": True}
+        started = datetime.now(timezone.utc)
+        with patch.object(app, "datetime", wraps=datetime) as clock:
+            clock.now.side_effect = [started, started + timedelta(seconds=4)]
+            result, _, _, _ = self.execute(
+                "--source", "geeknews", "--no-promo",
+                receipt_date=int((started + timedelta(seconds=3)).timestamp()),
+            )
+        self.assertEqual(result, 0)
+        self.assertIn("-100123:81", load_state(self.state_path)["feedback"]["posts"])
+
+    def test_report_and_reaction_dry_run_are_offline_and_read_only(self):
+        self.config["feedback"] = {"enabled": True}
+        for args in (("--feedback-report",), ("--collect-feedback", "--dry-run"), ("--source", "geeknews", "--dry-run")):
+            with self.subTest(args=args):
+                result, sender, _, _ = self.execute(*args)
+                self.assertEqual(result, 0)
+                sender.assert_not_called()
+                self.poller.assert_not_called()
+                self.assertFalse(self.state_path.exists())
+
+    def test_reaction_failure_does_not_stop_scheduled_news(self):
+        self.config["feedback"] = {"enabled": True}
+        result, sender, _, _ = self.execute("--source", "geeknews", "--no-promo", poll_error=FeedbackCollectionError("unavailable"))
+        self.assertEqual(result, 0)
+        sender.assert_called_once()
+        result, sender, _, _ = self.execute("--collect-feedback", poll_error=FeedbackCollectionError("unavailable"))
+        self.assertEqual(result, 2)
+        sender.assert_not_called()
+
+    def test_promotion_is_excluded_from_feedback(self):
+        self.config["feedback"] = {"enabled": True}
+        result, sender, _, _ = self.execute("--send-promo-now")
+        self.assertEqual(result, 0)
+        sender.assert_called_once()
+        self.poller.assert_not_called()
+        self.assertNotIn("feedback", load_state(self.state_path))
+
+    def test_uncertain_delivery_is_held_for_manual_review_not_resent(self):
+        result, sender, _, _ = self.execute(
+            "--source", "geeknews", "--no-promo",
+            send_error=TelegramSendError("response missing", delivery_uncertain=True),
+        )
+        self.assertEqual(result, 2)
+        sender.assert_called_once()
+        state = load_state(self.state_path)
+        self.assertIn(self.article.url, state["pending_delivery_review"])
+        self.assertEqual(state["delivery_count"], 0)
+        result, sender, _, _ = self.execute("--source", "geeknews", "--no-promo")
+        self.assertEqual(result, 0)
+        sender.assert_not_called()
+
+    def test_partial_delivery_preserves_successful_receipt(self):
+        self.config["feedback"] = {"enabled": True}
+        receipt = {"chat_id": -100123, "message_id": 82, "chat_type": "channel", "date": int(datetime.now(timezone.utc).timestamp())}
+        result, _, _, _ = self.execute(
+            "--source", "geeknews", "--no-promo",
+            send_error=TelegramSendError("second target failed", receipts=[receipt]),
+        )
+        self.assertEqual(result, 2)
+        state = load_state(self.state_path)
+        self.assertEqual(state["delivery_count"], 1)
+        self.assertIn("-100123:82", state["feedback"]["posts"])
 
     def test_unlisted_article_url_cannot_be_published(self):
         result, sender, collector, _ = self.execute(
