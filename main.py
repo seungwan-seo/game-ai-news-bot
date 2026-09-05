@@ -135,7 +135,17 @@ def main() -> int:
     ranked = rank_articles(articles, config)
     freshness_days = int(digest_config.get("freshness_days", 4))
     cutoff = now - timedelta(days=freshness_days)
-    fresh = [item for item in ranked if item.published_at is None or item.published_at >= cutoff]
+    # 미리보기는 게시물 레이아웃 검증이 목적이므로 최신 후보가 요청 수보다
+    # 적을 때도 충분히 볼 수 있게 수집된 관련 기사 전체에서 고른다.
+    fresh = (
+        ranked
+        if args.preview_send
+        else [
+            item
+            for item in ranked
+            if item.published_at is None or item.published_at >= cutoff
+        ]
+    )
     if not (args.show_all or args.preview_send):
         fresh = [item for item in fresh if item.url not in state["seen"]]
 
