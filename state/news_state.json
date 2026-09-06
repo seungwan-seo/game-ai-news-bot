@@ -1,12 +1,12 @@
 {
-  "delivery_count": 2,
-  "delivery_day_kst": "2026-09-06",
+  "delivery_count": 1,
+  "delivery_day_kst": "2026-09-07",
   "delivery_source_counts": {
-    "geeknews": 2
+    "geeknews": 1
   },
   "feedback": {
     "last_batch_size": 0,
-    "last_poll_at": "2026-09-06T12:11:40.861347+00:00",
+    "last_poll_at": "2026-09-06T15:50:33.570889+00:00",
     "next_update_id": 637924632,
     "posts": {
       "-1004468125637:26": {
@@ -27,17 +27,37 @@
         "up": 0,
         "url": "https://news.hada.io/topic?id=33245",
         "window_hours": 48.0
+      },
+      "-1004468125637:27": {
+        "category": "🛠 개발 도구",
+        "chat_id": -1004468125637,
+        "down": 0,
+        "learning_date": 0,
+        "learning_down": 0,
+        "learning_up": 0,
+        "learning_update_id": -1,
+        "message_id": 27,
+        "published_at": "2026-09-06T05:27:15+00:00",
+        "reaction_date": 0,
+        "reaction_update_id": -1,
+        "sent_at": "2026-09-06T15:50:47+00:00",
+        "source_id": "geeknews",
+        "title": "grep이 LSP를 이긴다고? 코딩 에이전트가 더 정교한 도구를 무시하는 이유",
+        "up": 0,
+        "url": "https://news.hada.io/topic?id=33273",
+        "window_hours": 48.0
       }
     },
     "started_at": "2026-09-05T18:02:45.376243+00:00",
     "window_hours": 48
   },
   "last_promo_at": "2026-09-05T04:43:20.477807+00:00",
-  "last_success_at": "2026-09-06T01:05:41.038002+00:00",
+  "last_success_at": "2026-09-06T15:50:48.989157+00:00",
   "promotion_cursor": 0,
   "seen": {
     "https://news.hada.io/topic?id=33245": "2026-09-06T01:05:41.038002+00:00",
     "https://news.hada.io/topic?id=33247": "2026-09-05T17:11:50.699580+00:00",
+    "https://news.hada.io/topic?id=33273": "2026-09-06T15:50:48.989157+00:00",
     "https://www.aiandgames.com/p/005-gamescom-gossip": "2026-09-04T16:46:03.545502+00:00",
     "https://www.aiandgames.com/p/post-gamescom-dev-musings-020926": "2026-09-04T16:46:03.545502+00:00"
   },
